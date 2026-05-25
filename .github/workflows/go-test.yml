@@ -1,0 +1,74 @@
+name: Manual Go Test with YashanDB
+
+on:
+  workflow_dispatch:  # 仅手动触发
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'   # 改为你实际的 Go 版本
+
+      # ---------- Docker 镜像缓存 ----------
+      - name: Cache YashanDB Docker image
+        id: cache-image
+        uses: actions/cache@v4
+        with:
+          path: yashandb-image-cache.tar
+          key: yashandb-image-23.4.1.109   # 版本不变则复用缓存
+
+      - name: Load cached Docker image
+        if: steps.cache-image.outputs.cache-hit == 'true'
+        run: docker load < yashandb-image-cache.tar
+
+      - name: Download and load image (no cache)
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        env:
+          IMAGE_URL: ${{ secrets.YASHANDB_IMAGE_URL }}
+        run: |
+          wget -O yashandb.tar.gz "$IMAGE_URL"
+          gunzip -c yashandb.tar.gz > yashandb.tar
+          docker load < yashandb.tar
+          docker save -o yashandb-image-cache.tar yashandb:yashandb-image-23.4.1.109-linux-x86_64
+
+      # ---------- 启动 YashanDB 容器 ----------
+      - name: Start YashanDB
+        env:
+          SYS_PASSWORD: ${{ secrets.YASHANDB_SYS_PASSWORD }}
+        run: |
+          docker run -d -p 1688:1688 \
+            -e SYS_PASSWD="$SYS_PASSWORD" \
+            --name yashandb \
+            yashandb:yashandb-image-23.4.1.109-linux-x86_64
+
+          # 等待数据库就绪
+          for i in {1..30}; do
+            if docker exec yashandb bash -c "echo 'select 1 from dual;' | yasql sys/$SYS_PASSWORD" 2>/dev/null; then
+              echo "Database is ready!"
+              break
+            fi
+            echo "Waiting for database..."
+            sleep 2
+          done
+
+      # ---------- 运行 Go 测试 ----------
+      - name: Run go test
+        env:
+          YASDB_HOST: localhost
+          YASDB_PORT: 1688
+          YASDB_USER: sys
+          YASDB_PASSWORD: ${{ secrets.YASHANDB_SYS_PASSWORD }}
+          YASDB_DATABASE: yasdb
+          CGO_CFLAGS: "-I${{ github.workspace }}/c-client-lib/include"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/c-client-lib/lib -lyascli"
+          LD_LIBRARY_PATH: "${{ github.workspace }}/c-client-lib/lib"
+        run: |
+          export LD_LIBRARY_PATH="${{ github.workspace }}/c-client-lib/lib:$LD_LIBRARY_PATH"
+          go test -v ./...

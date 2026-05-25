@@ -1,7 +1,7 @@
 name: Manual Go Test with YashanDB
 
 on:
-  workflow_dispatch:  # ½öÊÖ¶¯´¥·¢
+  workflow_dispatch:  # æ‰‹åŠ¨è§¦å‘
 
 jobs:
   test:
@@ -14,15 +14,15 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'   # ¸ÄÎªÄãÊµ¼ÊµÄ Go °æ±¾
+          go-version: '1.21'   # è¯·æ ¹æ®ä½ çš„é¡¹ç›®ä¿®æ”¹ Go ç‰ˆæœ¬
 
-      # ---------- Docker ¾µÏñ»º´æ ----------
+      # ---------- Docker é•œåƒç¼“å­˜ ----------
       - name: Cache YashanDB Docker image
         id: cache-image
         uses: actions/cache@v4
         with:
           path: yashandb-image-cache.tar
-          key: yashandb-image-23.4.1.109   # °æ±¾²»±äÔò¸´ÓÃ»º´æ
+          key: yashandb-image-23.4.1.109
 
       - name: Load cached Docker image
         if: steps.cache-image.outputs.cache-hit == 'true'
@@ -38,19 +38,20 @@ jobs:
           docker load < yashandb.tar
           docker save -o yashandb-image-cache.tar yashandb:yashandb-image-23.4.1.109-linux-x86_64
 
-      # ---------- Æô¶¯ YashanDB ÈİÆ÷ ----------
+      # ---------- å¯åŠ¨ YashanDB å®¹å™¨ ----------
       - name: Start YashanDB
         env:
           SYS_PASSWORD: ${{ secrets.YASHANDB_SYS_PASSWORD }}
         run: |
           docker run -d -p 1688:1688 \
             -e SYS_PASSWD="$SYS_PASSWORD" \
+            -e TZ=Asia/Shanghai \
             --name yashandb \
             yashandb:yashandb-image-23.4.1.109-linux-x86_64
 
-          # µÈ´ıÊı¾İ¿â¾ÍĞ÷
+          # ç­‰å¾…æ•°æ®åº“å°±ç»ªï¼ˆå•å¼•å·åŒ…è£¹å¯†ç ï¼Œé¿å… @ è¢«è¯¯è§£æï¼‰
           for i in {1..30}; do
-            if docker exec yashandb bash -c "echo 'select 1 from dual;' | yasql sys/$SYS_PASSWORD" 2>/dev/null; then
+            if docker exec yashandb bash -c "echo 'select 1 from dual;' | yasql 'sys/$SYS_PASSWORD'" 2>/dev/null; then
               echo "Database is ready!"
               break
             fi
@@ -58,17 +59,19 @@ jobs:
             sleep 2
           done
 
-      # ---------- ÔËĞĞ Go ²âÊÔ ----------
+      # ---------- è¿è¡Œ Go æµ‹è¯• ----------
       - name: Run go test
         env:
-          YASDB_HOST: localhost
-          YASDB_PORT: 1688
-          YASDB_USER: sys
-          YASDB_PASSWORD: ${{ secrets.YASHANDB_SYS_PASSWORD }}
-          YASDB_DATABASE: yasdb
+          SYS_PASSWORD: ${{ secrets.YASHANDB_SYS_PASSWORD }}
           CGO_CFLAGS: "-I${{ github.workspace }}/c-client-lib/include"
           CGO_LDFLAGS: "-L${{ github.workspace }}/c-client-lib/lib -lyascli"
           LD_LIBRARY_PATH: "${{ github.workspace }}/c-client-lib/lib"
         run: |
           export LD_LIBRARY_PATH="${{ github.workspace }}/c-client-lib/lib:$LD_LIBRARY_PATH"
-          go test -v ./...
+
+          # å¯¹å¯†ç ä¸­çš„ '@' è¿›è¡Œè½¬ä¹‰ï¼Œç”¨äº DSN
+          PASS_ESCAPED=$(echo "$SYS_PASSWORD" | sed 's/@/\\@/g')
+          DSN="sys/${PASS_ESCAPED}@localhost:1688"
+
+          echo "Using DSN: $DSN"
+          go test -dsn "$DSN" ./... -v

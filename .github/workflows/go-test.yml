@@ -38,13 +38,14 @@ jobs:
           docker load < yashandb.tar
           docker save -o yashandb-image-cache.tar yashandb:yashandb-image-23.4.1.109-linux-x86_64
 
-      # ---------- 启动 YashanDB 容器 ----------
+      # ---------- 启动 YashanDB 容器（强制 UTC） ----------
       - name: Start YashanDB
         env:
           SYS_PASSWORD: ${{ secrets.YASHANDB_SYS_PASSWORD }}
         run: |
           docker run -d -p 1688:1688 \
             -e SYS_PASSWD="$SYS_PASSWORD" \
+            -e TZ=UTC \
             --name yashandb \
             yashandb:yashandb-image-23.4.1.109-linux-x86_64
 

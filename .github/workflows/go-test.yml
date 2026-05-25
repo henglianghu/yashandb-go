@@ -14,7 +14,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'   # 请根据你的项目修改 Go 版本
+          go-version: '1.21'   # 根据你的项目修改
 
       # ---------- Docker 镜像缓存 ----------
       - name: Cache YashanDB Docker image
@@ -45,7 +45,6 @@ jobs:
         run: |
           docker run -d -p 1688:1688 \
             -e SYS_PASSWD="$SYS_PASSWORD" \
-            -e TZ=Asia/Shanghai \
             --name yashandb \
             yashandb:yashandb-image-23.4.1.109-linux-x86_64
 

@@ -1,0 +1,167 @@
+# PR 门禁：同仓 PR 用 pull_request（可用 secrets）；Fork PR 用 pull_request_target（可用 secrets，检出 PR 提交）。
+# Fork PR 会在 base 仓库上下文中执行 PR 代码，请勿在 PR 中提交恶意脚本；建议开启「Fork PR 需维护者批准」。
+name: Go Test with YashanDB (PR Gate)
+
+on:
+  # 同仓分支 → master：有 secrets，检出 PR 合并结果
+  pull_request:
+    branches: [master, main]
+  # Fork → 本仓库：有 secrets（pull_request 对 fork 不提供 secrets）
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [master, main]
+  # 手动触发（默认分支）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-go-test-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # 避免同仓 PR 时 pull_request 与 pull_request_target 各跑一遍
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
+
+    steps:
+      # Fork PR：必须显式检出 PR head（pull_request_target 默认是 base 分支）
+      - name: Checkout code (fork PR)
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      # 同仓 PR / 手动触发
+      - name: Checkout code
+        if: github.event_name != 'pull_request_target'
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Cache YashanDB C client (extracted)
+        id: cache-client
+        uses: actions/cache@v4
+        with:
+          path: c-client-lib
+          key: yashandb-client-23.4.7.100-linux-x86_64
+
+      - name: Download and extract YashanDB C client (23.4.7.100)
+        if: steps.cache-client.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          CLIENT_VER="23.4.7.100"
+          CLIENT_TGZ="yashandb-client-${CLIENT_VER}-linux-x86_64.tar.gz"
+          CLIENT_URL="https://raw.githubusercontent.com/yashan-technologies/yashandb-client/${CLIENT_VER}/${CLIENT_TGZ}"
+          echo "Downloading C client: ${CLIENT_URL}"
+          curl -fsSL -o "${CLIENT_TGZ}" "${CLIENT_URL}"
+          mkdir -p c-client-lib
+          tar -xzf "${CLIENT_TGZ}" -C c-client-lib
+          echo "C client extracted:"
+          ls -la c-client-lib
+          test -d c-client-lib/include
+          test -d c-client-lib/lib
+
+      - name: Cache YashanDB Docker image
+        id: cache-image
+        uses: actions/cache@v4
+        with:
+          path: yashandb-image-cache.tar
+          key: yashandb-image-23.4.1.109
+
+      - name: Load cached Docker image
+        if: steps.cache-image.outputs.cache-hit == 'true'
+        run: docker load < yashandb-image-cache.tar
+
+      - name: Download and load image (no cache)
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        env:
+          IMAGE_URL: ${{ secrets.YASHANDB_IMAGE_URL }}
+        run: |
+          wget -O yashandb.tar.gz "$IMAGE_URL"
+          gunzip -c yashandb.tar.gz > yashandb.tar
+          docker load < yashandb.tar
+          docker save -o yashandb-image-cache.tar yashandb:yashandb-image-23.4.1.109-linux-x86_64
+
+      - name: Start YashanDB
+        env:
+          SYS_PASSWORD: ${{ secrets.YASHANDB_SYS_PASSWORD }}
+        run: |
+          set -euo pipefail
+          docker rm -f yashandb 2>/dev/null || true
+          docker run -d -p 1688:1688 \
+            -e SYS_PASSWD="$SYS_PASSWORD" \
+            -e TZ=UTC \
+            --name yashandb \
+            yashandb:yashandb-image-23.4.1.109-linux-x86_64
+
+          # 镜像首次启动会执行 DeployYasdbCluster，GitHub Runner 上常超过 60s
+          try_yasql() {
+            docker exec -e SYS_PASSWD="$SYS_PASSWORD" yashandb bash -lc \
+              'echo "select 1 from dual;" | yasql "sys/${SYS_PASSWD}@127.0.0.1:1688"' >/dev/null 2>&1
+          }
+
+          ready=0
+          for i in $(seq 1 120); do
+            elapsed=$((i * 5))
+            # 1) 宿主机端口
+            if bash -c 'echo > /dev/tcp/127.0.0.1/1688' 2>/dev/null; then
+              # 2) SQL 连通
+              if try_yasql; then
+                echo "Database is ready (yasql ok, ${elapsed}s)"
+                ready=1
+                break
+              fi
+              # 3) 部署任务已成功但 yasql 尚未就绪时，多等一会
+              if docker logs yashandb 2>&1 | grep -q "task completed, status: SUCCESS"; then
+                echo "Deploy reported SUCCESS, waiting for yasql... (${elapsed}s)"
+                sleep 15
+                if try_yasql; then
+                  echo "Database is ready after deploy (${elapsed}s)"
+                  ready=1
+                  break
+                fi
+              fi
+            fi
+            echo "Waiting for database... (${i}/120, ${elapsed}s)"
+            sleep 5
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Database failed to become ready within 600s"
+            docker logs yashandb 2>&1 | tail -80 || true
+            exit 1
+          fi
+
+      - name: Run go test
+        env:
+          TZ: Asia/Shanghai
+          SYS_PASSWORD: ${{ secrets.YASHANDB_SYS_PASSWORD }}
+          CGO_ENABLED: '1'
+          CGO_CFLAGS: "-I${{ github.workspace }}/c-client-lib/include"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/c-client-lib/lib -lyascli -lyas_infra"
+          LD_LIBRARY_PATH: "${{ github.workspace }}/c-client-lib/lib"
+        run: |
+          export LD_LIBRARY_PATH="${{ github.workspace }}/c-client-lib/lib:$LD_LIBRARY_PATH"
+          export PATH="${{ github.workspace }}/c-client-lib/bin:$PATH"
+
+          PASS_ESCAPED=$(echo "$SYS_PASSWORD" | sed 's/@/\\@/g')
+          DSN="sys/${PASS_ESCAPED}@localhost:1688"
+
+          echo "Event: ${{ github.event_name }}"
+          echo "PR head: ${{ github.event.pull_request.head.repo.full_name }}@${{ github.event.pull_request.head.sha }}"
+          echo "Using DSN: sys/***@localhost:1688"
+          go test -dsn "$DSN" ./... -count=1 -timeout 30m
+
+      - name: Dump DB logs on failure
+        if: failure()
+        run: docker logs yashandb || true

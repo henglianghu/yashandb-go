@@ -62,6 +62,7 @@ jobs:
       # ---------- 运行 Go 测试 ----------
       - name: Run go test
         env:
+          TZ: Asia/Shanghai    # 与测试里 +08:00 一致
           SYS_PASSWORD: ${{ secrets.YASHANDB_SYS_PASSWORD }}
           CGO_CFLAGS: "-I${{ github.workspace }}/c-client-lib/include"
           CGO_LDFLAGS: "-L${{ github.workspace }}/c-client-lib/lib -lyascli"

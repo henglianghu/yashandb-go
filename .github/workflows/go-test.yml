@@ -97,25 +97,48 @@ jobs:
         env:
           SYS_PASSWORD: ${{ secrets.YASHANDB_SYS_PASSWORD }}
         run: |
+          set -euo pipefail
+          docker rm -f yashandb 2>/dev/null || true
           docker run -d -p 1688:1688 \
             -e SYS_PASSWD="$SYS_PASSWORD" \
             -e TZ=UTC \
             --name yashandb \
             yashandb:yashandb-image-23.4.1.109-linux-x86_64
 
+          # 镜像首次启动会执行 DeployYasdbCluster，GitHub Runner 上常超过 60s
+          try_yasql() {
+            docker exec -e SYS_PASSWD="$SYS_PASSWORD" yashandb bash -lc \
+              'echo "select 1 from dual;" | yasql "sys/${SYS_PASSWD}@127.0.0.1:1688"' >/dev/null 2>&1
+          }
+
           ready=0
-          for i in $(seq 1 30); do
-            if docker exec yashandb bash -c "echo 'select 1 from dual;' | yasql 'sys/$SYS_PASSWORD'" 2>/dev/null; then
-              echo "Database is ready!"
-              ready=1
-              break
+          for i in $(seq 1 120); do
+            elapsed=$((i * 5))
+            # 1) 宿主机端口
+            if bash -c 'echo > /dev/tcp/127.0.0.1/1688' 2>/dev/null; then
+              # 2) SQL 连通
+              if try_yasql; then
+                echo "Database is ready (yasql ok, ${elapsed}s)"
+                ready=1
+                break
+              fi
+              # 3) 部署任务已成功但 yasql 尚未就绪时，多等一会
+              if docker logs yashandb 2>&1 | grep -q "task completed, status: SUCCESS"; then
+                echo "Deploy reported SUCCESS, waiting for yasql... (${elapsed}s)"
+                sleep 15
+                if try_yasql; then
+                  echo "Database is ready after deploy (${elapsed}s)"
+                  ready=1
+                  break
+                fi
+              fi
             fi
-            echo "Waiting for database... ($i/30)"
-            sleep 2
+            echo "Waiting for database... (${i}/120, ${elapsed}s)"
+            sleep 5
           done
           if [ "$ready" -ne 1 ]; then
-            echo "Database failed to become ready"
-            docker logs yashandb || true
+            echo "Database failed to become ready within 600s"
+            docker logs yashandb 2>&1 | tail -80 || true
             exit 1
           fi
 

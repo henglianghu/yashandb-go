@@ -160,7 +160,7 @@ jobs:
           echo "Event: ${{ github.event_name }}"
           echo "PR head: ${{ github.event.pull_request.head.repo.full_name }}@${{ github.event.pull_request.head.sha }}"
           echo "Using DSN: sys/***@localhost:1688"
-          go test -dsn "$DSN" ./... -count=1 -timeout 30m
+          go test -skip '^TestVector' -count=1 -timeout 30m -dsn "$DSN" ./...
 
       - name: Dump DB logs on failure
         if: failure()

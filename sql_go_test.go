@@ -164,12 +164,10 @@ func testpreparestmtgosql(t *sqlTest) {
 	if err != nil {
 		t.Fatalf("select prepare failed, %v", err)
 	}
-	defer selectStmt.Close()
 	insertStmt, err := t.Prepare(fmt.Sprintf("INSERT INTO %s (count) VALUES (?)", t.tableName))
 	if err != nil {
 		t.Fatalf("insert prepare failed, %v", err)
 	}
-	defer insertStmt.Close()
 
 	for i := 1; i <= 3; i++ {
 		if _, err := insertStmt.Exec(i); err != nil {

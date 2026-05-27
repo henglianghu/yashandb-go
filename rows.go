@@ -19,6 +19,7 @@ import "C"
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"io"
@@ -42,6 +43,7 @@ type yasRow struct {
 	precision  uint8
 	scale      int8
 	nullable   uint8
+	env        *C.YapiEnv // 新增：用于释放 vector 资源
 }
 
 func NewYasRow(size uint32, yacType C.YapiType, precision uint8, scale int8, nullable uint8) *yasRow {
@@ -57,6 +59,7 @@ func NewYasRow(size uint32, yacType C.YapiType, precision uint8, scale int8, nul
 }
 
 type YasRows struct {
+	isCursor  bool
 	stmt      *YasStmt
 	fetchRows []*yasRow
 	isClosed  bool
@@ -78,6 +81,9 @@ func (r *YasRows) Close() error {
 	}
 	freeFetchRows(r.fetchRows)
 	r.isClosed = true
+	if r.isCursor {
+		_ = yapiReleaseCursorStmt(r.stmt.Stmt)
+	}
 	return nil
 }
 
@@ -134,6 +140,14 @@ func (r *YasRows) ColumnTypeScanType(index int) reflect.Type {
 		return reflect.TypeOf(int32(0))
 	case C.YAPI_TYPE_BIGINT:
 		return reflect.TypeOf(int64(0))
+	case C.YAPI_TYPE_UTINYINT:
+		return reflect.TypeOf(uint8(0))
+	case C.YAPI_TYPE_USMALLINT:
+		return reflect.TypeOf(uint16(0))
+	case C.YAPI_TYPE_UINTEGER:
+		return reflect.TypeOf(uint32(0))
+	case C.YAPI_TYPE_UBIGINT:
+		return reflect.TypeOf(uint64(0))
 	case C.YAPI_TYPE_FLOAT:
 		return reflect.TypeOf(float32(0))
 	case C.YAPI_TYPE_DOUBLE:
@@ -147,8 +161,12 @@ func (r *YasRows) ColumnTypeScanType(index int) reflect.Type {
 		return reflect.TypeOf(time.Time{})
 	case C.YAPI_TYPE_CHAR, C.YAPI_TYPE_NCHAR, C.YAPI_TYPE_VARCHAR, C.YAPI_TYPE_NVARCHAR, C.YAPI_TYPE_CLOB, C.YAPI_TYPE_NCLOB, C.YAPI_TYPE_YM_INTERVAL, C.YAPI_TYPE_DS_INTERVAL, C.YAPI_TYPE_JSON, C.YAPI_TYPE_XML:
 		return reflect.TypeOf("")
+	case C.YAPI_TYPE_VECTOR:
+		return reflect.TypeOf(Vector{})
 	case C.YAPI_TYPE_BLOB, C.YAPI_TYPE_BINARY, C.YAPI_TYPE_BIT:
 		return reflect.TypeOf([]byte(nil))
+	case C.YAPI_TYPE_CURSOR:
+		return reflect.TypeOf(sql.Rows{})
 	default:
 		return reflect.TypeOf(nil)
 	}
@@ -197,11 +215,12 @@ func (r *YasRows) ColumnTypeNullable(index int) (nullable, ok bool) {
 
 func (r *YasRows) getValues() (*[]driver.Value, error) {
 	var err error
-	var rows C.uint32_t
-	if err = yapiFetch(r.stmt.Stmt, &rows); err != nil {
+	unsafeRows := (unsafe.Pointer)(new(uint32))
+	rows := (*C.uint32_t)(unsafeRows)
+	if err = yapiFetch(r.stmt.Stmt, rows); err != nil {
 		return nil, err
 	}
-	if rows == 0 {
+	if *rows == 0 {
 		return nil, nil
 	}
 	columns := len(r.fetchRows)
@@ -224,6 +243,14 @@ func (r *YasRows) getValues() (*[]driver.Value, error) {
 			value = (*(*int32)(row.Data))
 		case C.YAPI_TYPE_BIGINT:
 			value = (*(*int64)(row.Data))
+		case C.YAPI_TYPE_UTINYINT:
+			value = (*(*uint8)(row.Data))
+		case C.YAPI_TYPE_USMALLINT:
+			value = (*(*uint16)(row.Data))
+		case C.YAPI_TYPE_UINTEGER:
+			value = (*(*uint32)(row.Data))
+		case C.YAPI_TYPE_UBIGINT:
+			value = (*(*uint64)(row.Data))
 		case C.YAPI_TYPE_FLOAT:
 			value = (*(*float32)(row.Data))
 		case C.YAPI_TYPE_DOUBLE:
@@ -232,7 +259,12 @@ func (r *YasRows) getValues() (*[]driver.Value, error) {
 			tmpDate := time.UnixMicro(*(*int64)(row.Data)).UTC()
 			value = time.Date(tmpDate.Year(), tmpDate.Month(), tmpDate.Day(), tmpDate.Hour(), tmpDate.Minute(), tmpDate.Second(), 0, time.UTC)
 		case C.YAPI_TYPE_TIMESTAMP:
-			value = time.UnixMicro(*(*int64)(row.Data)).UTC()
+			ts := (*C.YapiTimestamp)(row.Data)
+			t, err := r.stmt.Conn.yapiTimestampToTime(ts, false)
+			if err != nil {
+				return nil, err
+			}
+			value = *t
 		case C.YAPI_TYPE_SHORTDATE:
 			tmpDate := time.UnixMicro(*(*int64)(row.Data)).UTC()
 			value = time.Date(tmpDate.Year(), tmpDate.Month(), tmpDate.Day(), 0, 0, 0, 0, time.UTC)
@@ -240,17 +272,22 @@ func (r *YasRows) getValues() (*[]driver.Value, error) {
 			tmpDate := time.UnixMicro(*(*int64)(row.Data)).UTC()
 			value = time.Date(0, 1, 1, tmpDate.Hour(), tmpDate.Minute(), tmpDate.Second(), tmpDate.Nanosecond(), time.UTC)
 		case C.YAPI_TYPE_TIMESTAMP_LTZ:
-			value = time.UnixMicro(*(*int64)(row.Data)).Local()
+			ts := (*C.YapiTimestamp)(row.Data)
+			t, err := r.stmt.Conn.yapiTimestampToTime(ts, true)
+			if err != nil {
+				return nil, err
+			}
+			value = *t
 		case C.YAPI_TYPE_TIMESTAMP_TZ:
 			valueStr := (C.GoString((*C.char)(row.Data)))
-			t, err := time.Parse(_TimeZoneLayout, valueStr)
+			t, err := time.Parse(DateTimeFormats[DateTimeMicroZone], valueStr)
 			if err != nil {
 				return nil, fmt.Errorf("convert %q to time.Time failed, %v", valueStr, err)
 			}
 			value = t
-		case C.YAPI_TYPE_CHAR, C.YAPI_TYPE_NCHAR, C.YAPI_TYPE_VARCHAR, C.YAPI_TYPE_NVARCHAR, C.YAPI_TYPE_YM_INTERVAL, C.YAPI_TYPE_DS_INTERVAL:
+		case C.YAPI_TYPE_CHAR, C.YAPI_TYPE_NCHAR, C.YAPI_TYPE_VARCHAR, C.YAPI_TYPE_NVARCHAR:
 			value = (C.GoString((*C.char)(row.Data)))
-		case C.YAPI_TYPE_NUMBER:
+		case C.YAPI_TYPE_NUMBER, C.YAPI_TYPE_NUMBER_FLOAT:
 			str := C.GoString((*C.char)(row.Data))
 			if r.stmt.Conn.numberAsString {
 				value = str
@@ -278,6 +315,48 @@ func (r *YasRows) getValues() (*[]driver.Value, error) {
 		case C.YAPI_TYPE_BIT:
 			data := (*[64]byte)(row.Data)[0:*row.Indicator]
 			value = data
+		case C.YAPI_TYPE_YM_INTERVAL:
+			cymi := (*C.YapiYMInterval)(row.Data)
+			ymi, err := r.stmt.Conn.yapiYMIntervalToYmInterval(*cymi)
+			if err != nil {
+				return nil, err
+			}
+			value = ymi
+		case C.YAPI_TYPE_DS_INTERVAL:
+			cdsi := (*C.YapiDSInterval)(row.Data)
+			dsi, err := r.stmt.Conn.yapiDSIntervalToDSInterval(*cdsi)
+			if err != nil {
+				return nil, err
+			}
+			value = dsi
+		case C.YAPI_TYPE_CURSOR:
+			handle := (*C.YacHandle)(row.Data)
+			var cCursorStmt *C.YapiStmt
+			if err := yapiCursorStmtCreate(r.stmt.Conn.Conn, &cCursorStmt, handle); err != nil {
+				return nil, err
+			}
+			cursorStmt := &YasStmt{
+				Conn: r.stmt.Conn,
+				Stmt: cCursorStmt,
+				ctx:  r.stmt.ctx,
+			}
+			rows, err := cursorStmt.getFetchRows()
+			if err != nil {
+				_ = yapiReleaseCursorStmt(cCursorStmt)
+				return nil, err
+			}
+			value = &YasRows{
+				stmt:      cursorStmt,
+				fetchRows: rows,
+				isCursor:  true,
+			}
+
+		case C.YAPI_TYPE_VECTOR:
+			vector, err := r.stmt.Conn.vectorRead(row.Data)
+			if err != nil {
+				return nil, err
+			}
+			value = vector
 		default:
 			value = (C.GoString((*C.char)(row.Data)))
 		}

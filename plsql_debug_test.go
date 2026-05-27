@@ -125,7 +125,7 @@ func TestPdbgStart(t *testing.T) {
 	out := 0
 	v1 := 1
 	v2 := 100
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, v1, v2, sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, v1, v2, sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestPdbgContinte(t *testing.T) {
 	out := 0
 	v1 := 102
 	v2 := 100
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, v1, v2, sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, v1, v2, sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestPdbgContinte(t *testing.T) {
 func TestPdgStepNextStepInto(t *testing.T) {
 	createProcedute(t, plsql_1)
 	out := int64(0)
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestPdgStepNextStepInto(t *testing.T) {
 func TestPdgStepNext(t *testing.T) {
 	createProcedute(t, plsql_1)
 	out := int64(0)
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestPdgStepNext(t *testing.T) {
 func TestPdbgStepOut(t *testing.T) {
 	createProcedute(t, plsql_1)
 	out := int64(0)
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestPdbgGetRunningAttrs(t *testing.T) {
 	out := 0
 	v1 := 102
 	v2 := 100
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, v1, v2, sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, v1, v2, sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestPdbgGetFrameAttrs(t *testing.T) {
 	out := 0
 	v1 := 102
 	v2 := 100
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, v1, v2, sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, v1, v2, sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestPdbgGetAllVars(t *testing.T) {
 	out := 0
 	v1 := 102
 	v2 := 100
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, v1, v2, sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, v1, v2, sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +388,7 @@ func TestPdbgGetAllFrames(t *testing.T) {
 	out := 0
 	v1 := 102
 	v2 := 100
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, v1, v2, sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, v1, v2, sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestPdbgGetAllFrames(t *testing.T) {
 func TestPdbgAddBreakpoint(t *testing.T) {
 	createProcedute(t, plsql_1)
 	out := int64(0)
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +442,7 @@ func TestPdbgAddBreakpoint(t *testing.T) {
 func TestPdbgGetBreakpointAttrs(t *testing.T) {
 	createProcedute(t, plsql_1)
 	out := int64(0)
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +494,7 @@ func TestPdbgGetBreakpointAttrs(t *testing.T) {
 func TestPdbgDeleteBrakPoint(t *testing.T) {
 	createProcedute(t, plsql_1)
 	out := int64(0)
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -555,7 +555,7 @@ func TestPdbgDeleteBrakPoint(t *testing.T) {
 func TestPdbgDeleteAllBreakpoints(t *testing.T) {
 	createProcedute(t, plsql_1)
 	out := int64(0)
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, int64(1), int64(2), sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -599,7 +599,7 @@ func TestPdbgGetVarAttrs(t *testing.T) {
 	out := 0
 	v1 := 102
 	v2 := 100
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, v1, v2, sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, v1, v2, sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -629,11 +629,11 @@ func TestPdbgGetVarAttrs(t *testing.T) {
 		}
 		fmt.Printf("var %d dataType number is %v; dataType name is %s\n", i, dataType, GetDatabaseTypeName(uint32(dataType)))
 
-		var isGlobal bool
-		if err := p.GetVarAttrs(i, DBG_VAR_ATTR_IS_GLOBAL, &isGlobal); err != nil {
+		var globalLevel uint8
+		if err := p.GetVarAttrs(i, DBG_VAR_ATTR_IS_GLOBAL, &globalLevel); err != nil {
 			t.Fatal(err)
 		}
-		fmt.Printf("var %d isGlobal is %v\n", i, isGlobal)
+		fmt.Printf("var %d global level is %v\n", i, globalLevel)
 
 		var name string
 		if err := p.GetVarAttrs(i, DBG_VAR_ATTR_NAME, &name); err != nil {
@@ -656,7 +656,7 @@ func TestPdbgGetVarValue(t *testing.T) {
 	v1 := 102
 	v2 := 100
 	expected := 202
-	p, err := NewPlsqlDebug(testDsn, callPlSql_1, v1, v2, sql.Out{Dest: &out})
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_1, v1, v2, sql.Out{Dest: &out}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -719,10 +719,10 @@ func TestPdbgNameBinding(t *testing.T) {
 	p3Expected := 202
 	p2Expected := 1
 
-	p, err := NewPlsqlDebug(testDsn, call,
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(call,
 		sql.NamedArg{Name: "p3", Value: sql.Out{Dest: &p3}},
 		sql.NamedArg{Name: "p1", Value: p1},
-		sql.NamedArg{Name: "p2", Value: sql.Out{Dest: &p2, In: true}})
+		sql.NamedArg{Name: "p2", Value: sql.Out{Dest: &p2, In: true}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -777,10 +777,10 @@ func TestPdbgNameReturnBinding(t *testing.T) {
 	result := float64(0)
 	expected := float64(2)
 
-	p, err := NewPlsqlDebug(testDsn, call,
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(call,
 		sql.NamedArg{Name: "result", Value: sql.Out{Dest: &result}},
 		sql.NamedArg{Name: "a", Value: a},
-		sql.NamedArg{Name: "b", Value: b})
+		sql.NamedArg{Name: "b", Value: b}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -805,7 +805,7 @@ func TestPdbgNameReturnBinding(t *testing.T) {
 
 func TestPdbgGetAllData(t *testing.T) {
 	createProcedute(t, plsql_3)
-	p, err := NewPlsqlDebug(testDsn, callPlSql_3)
+	p, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callPlSql_3))
 	if err != nil {
 		t.Fatal(err)
 	}

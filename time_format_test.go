@@ -1,4 +1,4 @@
-package yasdb
+﻿package yasdb
 
 import (
 	"testing"
@@ -31,6 +31,7 @@ func TestFormatTime(t *testing.T) {
 			format:   "YYY-MM-DD",
 			expected: "001-05-05",
 		},
+		// fixme: 不一致
 		// {
 		// 	format:   "Y-MM-DD",
 		// 	expected: "1-05-05",

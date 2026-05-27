@@ -40,10 +40,8 @@ func testBindIntputParam(t *sqlTest) {
 		fmt.Sprintf("insert into %s(c1, c2, c3, c4, c5, c6, c7, c8, c9, c10) values(:1, :2, :3, :4, :5, :6, :7, :8, :9, :10)", si.tableName),
 		2, 3.2, 4.3, time.Now(), time.Now().AddDate(0, -1, -1), "c6", "c7", "c8", []byte("c9"), true,
 	)
-	rows := t.mustQuery(fmt.Sprintf("select * from %s where c1 > ?", si.tableName), 1)
-	rows.Close()
-	rows = t.mustQuery(fmt.Sprintf("select * from %s where c10 = ?", si.tableName), true)
-	rows.Close()
+	t.mustQuery(fmt.Sprintf("select * from %s where c1 > ?", si.tableName), 1)
+	t.mustQuery(fmt.Sprintf("select * from %s where c10 = ?", si.tableName), true)
 }
 
 func TestBindOutputParam(t *testing.T) {
@@ -194,10 +192,8 @@ func TestSelectFromDual(t *testing.T) {
 	db := newSqlTest(t)
 	defer db.Close()
 
-	rows := db.mustQuery("select 1 from dual")
-	rows.Close()
-	rows = db.mustQuery("select '😀' from dual")
-	rows.Close()
+	db.mustQuery("select 1 from dual")
+	db.mustQuery("select '😀' from dual")
 }
 
 func TestSelectFromTable(t *testing.T) {
@@ -223,10 +219,8 @@ func TestSelectFromTable(t *testing.T) {
 	db.mustExec("INSERT INTO test_select1 VALUES ('0501','武汉','','')")
 	db.mustExec("INSERT INTO test_select1 VALUES ('0502','长沙','05','')")
 
-	rows := db.mustQuery("SELECT * FROM test_select1 LIMIT 4")
-	rows.Close()
-	rows = db.mustQuery("SELECT * FROM test_select1 LIMIT 4 OFFSET 3")
-	rows.Close()
+	db.mustQuery("SELECT * FROM test_select1 LIMIT 4")
+	db.mustQuery("SELECT * FROM test_select1 LIMIT 4 OFFSET 3")
 }
 
 func TestInsert(t *testing.T) {
@@ -382,8 +376,7 @@ func TestQueryContainSemicolon(t *testing.T) {
 	db.mustExec("INSERT INTO test_semicolon VALUES ('20210102020004','11001','02','0201',sysdate-400,'0201008003',400)  ;")
 	db.mustExec("INSERT INTO test_semicolon VALUES ('20210102020005','11002','02','0201',sysdate-400,'0201010011',200);")
 	db.mustExec("INSERT INTO test_semicolon VALUES ('20210102020006','10001','02','0201',sysdate-400,'0201008003',100)   ;")
-	rows := db.mustQuery("select * from test_semicolon;")
-	rows.Close()
+	db.mustQuery("select * from test_semicolon;")
 	db.mustExec("DELETE FROM test_semicolon WHERE order_no=20010102020002; ")
 	db.mustExec("DELETE FROM test_semicolon WHERE id<300  ;")
 }

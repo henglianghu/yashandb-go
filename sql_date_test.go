@@ -23,6 +23,7 @@ func testDate(t *sqlTest) {
 	t1 := time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2 := time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
 	t3 := time.Unix(time.Now().Unix(), 0)
+	t3utc := time.Date(t3.Year(), t3.Month(), t3.Day(), t3.Hour(), t3.Minute(), t3.Second(), 0, time.UTC)
 	t4, _ := time.Parse(_DateFormat, "0001-01-01 00:00:00")
 	si = sqlGenInfo{
 		tableName: "test_date",
@@ -39,7 +40,7 @@ func testDate(t *sqlTest) {
 		queryResult: [][]interface{}{
 			{int32(1), t1},
 			{int32(2), t2},
-			{int32(3), t3},
+			{int32(3), t3utc},
 			{int32(4), t4},
 		},
 	}
@@ -94,6 +95,7 @@ func testTimestamp(t *sqlTest) {
 	t1, _ := time.Parse(_TimestampForamt, "0001-01-01 00:00:00.000000")
 	t2, _ := time.Parse(_TimestampForamt, "9999-12-31 23:59:59.999999")
 	t3 := time.Unix(0, time.Now().UnixMilli()*1000)
+	t3utc := time.Date(t3.Year(), t3.Month(), t3.Day(), t3.Hour(), t3.Minute(), t3.Second(), t3.Nanosecond(), time.UTC)
 	si = sqlGenInfo{
 		tableName: "test_timestamp",
 		columnNameType: [][2]string{
@@ -108,7 +110,7 @@ func testTimestamp(t *sqlTest) {
 		queryResult: [][]interface{}{
 			{int32(1), t1},
 			{int32(2), t2},
-			{int32(3), t3},
+			{int32(3), t3utc},
 		},
 	}
 	t.genTableTest()

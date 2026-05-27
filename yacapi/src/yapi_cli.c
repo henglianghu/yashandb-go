@@ -101,7 +101,6 @@ YapiResult yapiOpenDynamicLib(char* yacliLibName, YapiPointer* handler, YapiErro
     return YAPI_ERROR;
 }
 
-
 YapiResult yapiCloseDynamicLib(YapiPointer* handler, YapiErrorMsg* error)
 {
     BOOL ret = FreeLibrary(*handler);
@@ -952,7 +951,7 @@ YapiResult yapiCliDescAlloc2(YacHandle hEnv, void** desc, YapiDescType type, Yap
     YAPI_CHECK_CLI_RETURN();
 }
 
-YapiResult yapiCliDescFree2(YacHandle hEnv, void** desc, YapiDescType type, YapiErrorMsg* error)
+YapiResult yapiCliDescFree2(YacHandle hEnv, void* desc, YapiDescType type, YapiErrorMsg* error)
 {
     YapiResult ret;
 

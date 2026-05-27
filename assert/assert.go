@@ -1,6 +1,9 @@
 package assert
 
-import "reflect"
+import (
+	"reflect"
+	"strings"
+)
 
 type TestIF interface {
 	Error(args ...interface{})
@@ -27,6 +30,13 @@ type Assert struct {
 func NewAssert(t TestIF) *Assert {
 	return &Assert{
 		t: t,
+	}
+}
+
+func (ast *Assert) Contains(src, want string) {
+	ast.t.Helper()
+	if !strings.Contains(src, want) {
+		ast.t.Error("Not Contains:", "src:", src, " want:", want)
 	}
 }
 

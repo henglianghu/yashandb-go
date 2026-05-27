@@ -1,8 +1,13 @@
-package yasdb
+﻿package yasdb
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
+	"io"
+	"reflect"
 	"testing"
 	"time"
 
@@ -128,7 +133,7 @@ func startOutParamDebug(t *testing.T, callParam *callParam) *PlsqlDebug {
 		sql.Named("C10", sql.Out{Dest: &callParam.c10}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callParam.callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callParam.callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +194,7 @@ func TestBitInout(t *testing.T) {
 		sql.Named("P_BIT", sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +250,7 @@ func TestBoolInout(t *testing.T) {
 		sql.Named("P_BOOLEAN", sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +307,7 @@ func TestDateInout(t *testing.T) {
 		sql.Named("P_DATE", sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +366,7 @@ func TestTimestampInout(t *testing.T) {
 		sql.Named("P_TIMESTAMP", sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +431,7 @@ func TestTimestampWithTimeZoneInout(t *testing.T) {
 		sql.Named("P_TIMESTAMP_TZ", sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,7 +490,7 @@ func TestDoubleInout(t *testing.T) {
 		sql.Named("P_DOUBLE", sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +548,7 @@ func TestFloatInout(t *testing.T) {
 		sql.Named("P_FLOAT", sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -599,7 +604,7 @@ func TestTinyintInout(t *testing.T) {
 		sql.Named(bindName, sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -654,7 +659,7 @@ func TestSamllintInout(t *testing.T) {
 		sql.Named(bindName, sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -709,7 +714,7 @@ func TestIntegerInout(t *testing.T) {
 		sql.Named(bindName, sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,7 +770,7 @@ func TestBigintInout(t *testing.T) {
 		sql.Named(bindName, sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -898,7 +903,7 @@ func TestByteInout(t *testing.T) {
 				sql.Named(c.bindName, sql.Out{Dest: value, In: true}),
 			}
 
-			debugsession, err := NewPlsqlDebug(testDsn, c.callTemplate, namedArgs...)
+			debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(c.callTemplate, namedArgs...))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1035,7 +1040,7 @@ func TestStringInout(t *testing.T) {
 				sql.Named(c.bindName, sql.Out{Dest: value, In: true}),
 			}
 
-			debugsession, err := NewPlsqlDebug(testDsn, c.callTemplate, namedArgs...)
+			debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(c.callTemplate, namedArgs...))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1092,7 +1097,7 @@ func TestDsIntervalInout(t *testing.T) {
 		sql.Named("P_INTERVAL_DAY_TO_SECOND", sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1147,7 +1152,7 @@ func TestNumberInout(t *testing.T) {
 		sql.Named("P_NUMBER", sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1204,7 +1209,7 @@ func TestRowidInout(t *testing.T) {
 		sql.Named("P_ROWID", sql.Out{Dest: value, In: true}),
 	}
 
-	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
+	debugsession, err := NewPlsqlDebug(testDsn, WithDebugCallTempalate(callTemplate, namedArgs...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1228,62 +1233,171 @@ func TestRowidInout(t *testing.T) {
 	assert.Equal(rowidVal, expected)
 }
 
-// func TestYmIntervalInout(t *testing.T) {
+func TestDebugOutCursorFetch(t *testing.T) {
 
-// 	proc := `
-// 	CREATE OR REPLACE PROCEDURE p_interval_year_to_month_inout(
-// 		p_interval_year_to_month IN OUT INTERVAL YEAR TO MONTH
-// 	) AS
-// 	BEGIN
-// 		p_interval_year_to_month := '1000-10';
-// 	END;
-// 	`
-// 	callTemplate := `
-// 	BEGIN
-// 		"P_INTERVAL_YEAR_TO_MONTH_INOUT"(
-// 			"P_INTERVAL_YEAR_TO_MONTH" => :P_INTERVAL_YEAR_TO_MONTH);
-// 	END;
-// 	`
+	db, err := sql.Open("yasdb", testDsn)
+	if err != nil {
+		t.Fatalf("error connecting: %v", err)
+	}
+	defer db.Close()
 
-// 	procName := "P_INTERVAL_YEAR_TO_MONTH_INOUT"
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
 
-// 	ymInterval := "1000-10"
+	dropDep := "drop table if exists departments;"
+	createDep := `
+	CREATE TABLE departments (
+			department_id   NUMBER(4) PRIMARY KEY,
+			department_name VARCHAR2(30) NOT NULL,
+			manager_id      NUMBER(6),
+			location_id     NUMBER(4)
+		);
+	`
 
-// 	createProcedute(t, proc)
-// 	oid, sid := queryObjIdAndSubId(t, procName)
+	dropEmp := "drop table if exists employees;"
+	createEmp := `
+	CREATE TABLE employees (
+			employee_id    int PRIMARY KEY,
+			first_name     VARCHAR2(20),
+			last_name      VARCHAR2(25) NOT NULL,
+			email          VARCHAR2(25) NOT NULL UNIQUE,
+			phone_number   VARCHAR2(20),
+			hire_date      DATE NOT NULL,
+			job_id         VARCHAR2(10) NOT NULL,
+			salary         int,
+			commission_pct NUMBER(2,2),
+			manager_id     NUMBER(6),
+			department_id  NUMBER(4)
+		);
+	`
+	proc := `
+	CREATE OR REPLACE PROCEDURE "SYS".sp_get_employees_by_dept(
+		p_department_id IN employees.department_id%TYPE,
+		p_emp_cursor OUT SYS_REFCURSOR
+	)
+	IS
+	BEGIN
+		-- 打开游标并作为OUT参数返回
+		OPEN p_emp_cursor FOR
+			SELECT employee_id, first_name, last_name, salary, hire_date
+			FROM employees
+			WHERE department_id = p_department_id
+			ORDER BY salary DESC;
+		
+		DBMS_OUTPUT.PUT_LINE('部门 ' || p_department_id || ' 的员工游标已返回');
+		
+	EXCEPTION
+		WHEN NO_DATA_FOUND THEN
+			DBMS_OUTPUT.PUT_LINE('未找到部门 ' || p_department_id || ' 的员工信息');
+		WHEN OTHERS THEN
+			DBMS_OUTPUT.PUT_LINE('错误: ' || SQLERRM);
+			-- 如果游标已打开，需要关闭
+			IF p_emp_cursor%ISOPEN THEN
+				CLOSE p_emp_cursor;
+			END IF;
+			RAISE;
+	END sp_get_employees_by_dept;
+	`
 
-// 	value, err := NewOutputBindValue(&ymInterval, WithTypeYMInterval())
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
+	preCreate := []string{
+		dropDep,
+		createDep,
+		dropEmp,
+		createEmp,
+		"INSERT INTO departments (department_id, department_name, manager_id, location_id) VALUES (90, 'Executive', 108, 1700);",
+		"INSERT INTO employees (employee_id, first_name, last_name, email, phone_number, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (100, 'Steven', 'King', 'SKING', '515.123.4567', DATE '2003-06-17', 'AD_PRES', 24000, NULL, NULL, 90);",
+		"INSERT INTO employees (employee_id, first_name, last_name, email, phone_number, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (101, 'Neena', 'Kochhar', 'NKOCHHAR', '515.123.4568', DATE '2005-09-21', 'AD_VP', 17000, NULL, 100, 90);",
+		"INSERT INTO employees (employee_id, first_name, last_name, email, phone_number, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (102, 'Lex', 'De Haan', 'LDEHAAN', '515.123.4569', DATE '2001-01-13', 'AD_VP', 17000, NULL, 100, 90);",
+		proc,
+	}
 
-// 	namedArgs := []any{
-// 		sql.Named("P_INTERVAL_YEAR_TO_MONTH", sql.Out{Dest: value, In: true}),
-// 	}
+	for _, s := range preCreate {
+		execute(t, conn, s)
+	}
 
-// 	debugsession, err := NewPlsqlDebug(testDsn, callTemplate, namedArgs...)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	if err := debugsession.Start(oid, sid); err != nil {
-// 		t.Fatal(err)
-// 	}
+	callTemplate := `
+	BEGIN
+		"SYS"."SP_GET_EMPLOYEES_BY_DEPT"(
+			"P_DEPARTMENT_ID" => :P_DEPARTMENT_ID,
+			"P_EMP_CURSOR" => :P_EMP_CURSOR);
+	END;
+	`
 
-// 	if err := debugsession.Continue(); err != nil {
-// 		t.Fatal(err)
-// 	}
+	proName := "SP_GET_EMPLOYEES_BY_DEPT"
 
-// 	if err := debugsession.GetBindOutValue(); err != nil {
-// 		t.Fatal(err)
-// 	}
+	oid, subid := queryObjIdAndSubId(t, proName)
 
-// 	closeDebugSession(debugsession)
+	cursor := &YasRows{}
+	defer cursor.Close()
 
-// 	// expected := float64(1234567890.123456789)
+	cursorValue, err := NewOutputBindValue(cursor, WithCursor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	namedArgs := []any{
+		sql.Named("P_DEPARTMENT_ID", 90),
+		sql.Named("P_EMP_CURSOR", sql.Out{Dest: cursorValue}),
+	}
 
-// 	// assert := assert.NewAssert(t)
-// 	// assert.Equal(doubleVal, expected)
-// }
+	debug, err := NewPlsqlDebug(testDsn,
+		WithDebugCallTempalate(callTemplate, namedArgs...),
+	)
+	defer func() {
+		_ = debug.Abort()
+		_ = debug.Close()
+	}()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := debug.Start(oid, subid); err != nil {
+		t.Fatal(err)
+	}
+
+	for {
+		if err := debug.StepNext(); err != nil {
+			var yasErr *YasDBError
+			// 调试结束
+			if errors.As(err, &yasErr) && yasErr.Code == 8068 {
+				break
+			}
+			t.Fatal(err)
+		}
+	}
+
+	if err := debug.GetBindOutValue(); err != nil {
+		t.Fatal(err)
+	}
+
+	cols := cursor.Columns()
+	data := make([][]driver.Value, 0)
+
+	for {
+		values := make([]driver.Value, len(cols))
+		err := cursor.Next(values)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = append(data, values)
+	}
+
+	expected := [][]driver.Value{
+		{int32(100), "Steven", "King", int32(24000), time.Date(2003, 6, 17, 0, 0, 0, 0, time.UTC)},
+		{int32(101), "Neena", "Kochhar", int32(17000), time.Date(2005, 9, 21, 0, 0, 0, 0, time.UTC)},
+		{int32(102), "Lex", "De Haan", int32(17000), time.Date(2001, 1, 13, 0, 0, 0, 0, time.UTC)},
+	}
+
+	if !reflect.DeepEqual(data, expected) {
+		t.Fatalf("fetch cursor data not equal, actual:\n %#v\n expected:\n %#v\n", data, expected)
+	}
+
+}
 
 func littleEndianBytesToBinaryString(data []byte) string {
 	var result string

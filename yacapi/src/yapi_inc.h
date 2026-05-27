@@ -16,7 +16,6 @@ extern "C" {
     } while (0)
 
 typedef enum EnYacResult { YAC_SUCCESS = 0, YAC_SUCCESS_WITH_INFO = 1, YAC_ERROR = -1 } YacResult;
-typedef void* YacHandle;
 
 typedef YacResult (*yapiFuncAllocHandle)(YapiHandleType type, YacHandle input, YacHandle* output);
 typedef YacResult (*yapiFuncFreeHandler)(YapiHandleType type, YacHandle handle);
@@ -91,7 +90,7 @@ typedef YacResult (*yapiFuncLobFreeTemporary)(YacHandle hConn, YapiLobLocator* l
 
 // vector API
 typedef YacResult (*yapiFuncDescAlloc2)(YacHandle hEnv, void** desc, YapiDescType type);
-typedef YacResult (*yapiFuncDescFree2)(YacHandle hEnv, void** desc, YapiDescType type);
+typedef YacResult (*yapiFuncDescFree2)(YacHandle hEnv, void* desc, YapiDescType type);
 typedef YacResult (*yapiFuncVectorFromText)(YapiVector* vector, YapiVectorFormat format, uint16_t dim, char* text, uint32_t textlen, uint32_t mode);
 typedef YacResult (*yapiFuncVectorFromArray)(YapiVector* vector, YapiVectorFormat format, uint16_t dim, uint8_t* array, uint32_t arrayLen, uint32_t mode);
 typedef YacResult (*yapiFuncVectorToText)(YapiVector* vector, char* text, uint32_t* textlen, uint32_t mode);
@@ -493,7 +492,7 @@ YapiResult yapiCliConnectionGiveBack(YacHandle hConn, YapiErrorMsg* error);
 YapiResult yapiCliConnectionPoolDestroy(YacHandle hConnPool, uint32_t mode, YapiErrorMsg* error);
 
 YapiResult yapiCliDescAlloc2(YacHandle hEnv, void** desc, YapiDescType type, YapiErrorMsg* error);
-YapiResult yapiCliDescFree2(YacHandle hEnv, void** desc, YapiDescType type, YapiErrorMsg* error);
+YapiResult yapiCliDescFree2(YacHandle hEnv, void* desc, YapiDescType type, YapiErrorMsg* error);
 YapiResult yapiCliVectorFromText(YapiVector* vector, YapiVectorFormat format, uint16_t dim, char* text, uint32_t textlen, uint32_t mode, YapiErrorMsg* error);
 YapiResult yapiCliVectorFromArray(YapiVector* vector, YapiVectorFormat format, uint16_t dim, uint8_t* array, uint32_t arrayLen, uint32_t mode, YapiErrorMsg* error);
 YapiResult yapiCliVectorToText(YapiVector* vector, char* text, uint32_t* textlen, uint32_t mode, YapiErrorMsg* error);

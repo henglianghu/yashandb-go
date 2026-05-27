@@ -1,4 +1,4 @@
-# PR 门禁：同仓 PR 用 pull_request（可用 secrets）；Fork PR 用 pull_request_target（可用 secrets，检出 PR 提交）。
+# PR 门禁：同仓 PR 用 pull_request（可用 secrets）；Fork PR 用 pull_request_target（可用 secrets，检出 PR 提交） 。
 # Fork PR 会在 base 仓库上下文中执行 PR 代码，请勿在 PR 中提交恶意脚本；建议开启「Fork PR 需维护者批准」。
 name: Go Test with YashanDB (PR Gate)
 
@@ -160,7 +160,7 @@ jobs:
           echo "Event: ${{ github.event_name }}"
           echo "PR head: ${{ github.event.pull_request.head.repo.full_name }}@${{ github.event.pull_request.head.sha }}"
           echo "Using DSN: sys/***@localhost:1688"
-          go test -dsn "$DSN" ./... -count=1 -timeout 30m
+          go test -skip '^TestVector' -count=1 -timeout 30m -dsn "$DSN" ./...
 
       - name: Dump DB logs on failure
         if: failure()

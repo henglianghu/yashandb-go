@@ -1,4 +1,4 @@
-# PR 门禁：同仓 PR 用 pull_request（可用 secrets）；Fork PR 用 pull_request_target（可用 secrets，检出 PR 提交）。
+# PR 门禁：同仓 PR 用 pull_request（可用 secrets）；Fork PR 用 pull_request_target（可用 secrets，检出 PR 提交） 。
 # Fork PR 会在 base 仓库上下文中执行 PR 代码，请勿在 PR 中提交恶意脚本；建议开启「Fork PR 需维护者批准」。
 name: Go Test with YashanDB (PR Gate)
 

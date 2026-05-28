@@ -1,46 +1,37 @@
-# PR 门禁：同仓 PR 用 pull_request（可用 secrets）；Fork PR 用 pull_request_target（可用 secrets，检出 PR 提交） 。
-# Fork PR 会在 base 仓库上下文中执行 PR 代码，请勿在 PR 中提交恶意脚本；建议开启「Fork PR 需维护者批准」。
+# PR 门禁：同仓 + Fork PR 均使用 pull_request_target（可用 secrets，检出 PR head）。
+# pull_request_target 在 base 仓库上下文执行，请勿在 PR 中提交恶意脚本；
+# 建议在 Settings → Actions → Fork pull request workflows 中开启「需维护者批准」。
 name: Go Test with YashanDB (PR Gate)
 
 on:
-  # 同仓分支 → master：有 secrets，检出 PR 合并结果
-  pull_request:
-    branches: [master, main]
-  # Fork → 本仓库：有 secrets（pull_request 对 fork 不提供 secrets）
   pull_request_target:
     types: [opened, synchronize, reopened]
     branches: [master, main]
-  # 手动触发（默认分支）
   workflow_dispatch:
 
 permissions:
   contents: read
-  
+
 concurrency:
-  group: ci-go-test-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ci-go-test-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    # 避免同仓 PR 时 pull_request 与 pull_request_target 各跑一遍
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
 
     steps:
-      # Fork PR：必须显式检出 PR head（pull_request_target 默认是 base 分支）
-      - name: Checkout code (fork PR)
+      # PR（同仓 / Fork）：必须检出 PR head，否则会测到 base 分支代码
+      - name: Checkout code
         if: github.event_name == 'pull_request_target'
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      # 同仓 PR / 手动触发
-      - name: Checkout code
-        if: github.event_name != 'pull_request_target'
+      # 手动触发：检出当前分支（一般为 master）
+      - name: Checkout code (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/checkout@v4
 
       - name: Set up Go

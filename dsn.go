@@ -28,7 +28,8 @@ const (
 	_HeartbeatEnable = "heartbeat_enable"
 	_NumberAsString  = "number_as_string"
 	_CompatVector    = "compat_vector"
-	_CliPrepare      = "cliPrepare"
+	_CliPrepare      = "cli_prepare"
+	_SslRootCer      = "ssl_root_cer"
 
 	_DbTimestampFormat   = "timestamp_format"
 	_DbDateFormat        = "date_format"
@@ -47,6 +48,14 @@ var (
 	escapeChar = `\`
 )
 
+type CompatVector string
+
+const (
+	CV_NULL   CompatVector = "null"
+	CV_YASHAN CompatVector = "yashan"
+	CV_MYSQL  CompatVector = "mysql"
+)
+
 type DataSourceName struct {
 	User              string
 	Password          string
@@ -57,7 +66,7 @@ type DataSourceName struct {
 	ukeyPin           string
 	heartbeatEnable   bool
 	numberAsString    bool
-	compatVector      string
+	compatVector      CompatVector
 	cliPrepare        bool
 	timestampFormat   string
 	timestampTzFormat string
@@ -65,6 +74,7 @@ type DataSourceName struct {
 	timeFormat        string
 	dsIntervalFormat  string
 	ymIntervalFormat  string
+	sslRootCer        string
 }
 
 // ParseDSN parses a DataSourceName used to connect to YashanDB
@@ -184,17 +194,19 @@ func parseParams(dsn *DataSourceName, argStr string) error {
 			}
 		case _CompatVector:
 			value := strings.ToLower(strs[1])
-			switch value {
-			case "mysql", "yashan", "null":
-				dsn.compatVector = value
+			switch CompatVector(value) {
+			case CV_MYSQL, CV_YASHAN, CV_NULL:
+				dsn.compatVector = CompatVector(value)
 			default:
 				return fmt.Errorf("unknow compat_vector %s", value)
 			}
-		case _CliPrepare:
+		case _CliPrepare, "cliprepare": // 兼容旧版本
 			value := strings.ToLower(strs[1])
 			if value == "0" || value == "false" {
 				dsn.cliPrepare = false
 			}
+		case _SslRootCer:
+			dsn.sslRootCer = strs[1]
 		case _DbDateFormat:
 			dsn.dateFormat = strs[1]
 		case _DbTimeFormat:

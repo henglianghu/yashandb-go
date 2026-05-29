@@ -53,6 +53,7 @@ type YasConn struct {
 	timeFormat        string
 	dsIntervalFormat  string
 	ymIntervalFormat  string
+	compatVector      CompatVector
 	mu                sync.Mutex
 }
 
@@ -108,6 +109,9 @@ func (conn *YasConn) Ping(ctx context.Context) error {
 	if err := yapiPing(conn.Conn, -1); err != nil {
 		// c driver is unsupport yacPingWithTimeout, support in 23.4.4
 		if isLoadSymbolErr(err) {
+			return nil
+		}
+		if isFeatureUnSupported(err) {
 			return nil
 		}
 		return err
@@ -189,18 +193,26 @@ func (conn *YasConn) getServerStatus() serverStatus {
 	return SS_UNCONNECTED
 }
 
-func (conn *YasConn) setCompatVector(compatVector string) error {
-	if compatVector == "" || compatVector == "null" {
+func (conn *YasConn) setCompatVector(cv CompatVector) error {
+	if cv == "" || cv == CV_NULL {
 		return nil
 	}
 
-	stmt, err := PrepareContext(conn, context.Background(), (fmt.Sprintf("alter session set compat_vector=%s", compatVector)))
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
+	setValue := stringToYasChar(string(cv))
+	defer C.free(unsafe.Pointer(setValue))
 
-	return stmt.yacExecute()
+	return conn.yapiSetConnAttr(C.YAPI_ATTR_SET_COMPAT_VECTOR, unsafe.Pointer(setValue), C.int32_t(len(cv)))
+}
+
+func (conn *YasConn) setSslRootCer(sslRootCer string) error {
+	if sslRootCer == "" {
+		return nil
+	}
+
+	setValue := stringToYasChar(sslRootCer)
+	defer C.free(unsafe.Pointer(setValue))
+
+	return conn.yapiSetConnAttr(C.YAPI_ATTR_SSL_ROOT_CER, unsafe.Pointer(setValue), C.int32_t(len(sslRootCer)))
 }
 
 func (conn *YasConn) yapiSetConnAttr(attr C.YapiConnAttr, value unsafe.Pointer, bufLength C.int32_t) error {
@@ -243,10 +255,12 @@ func (conn *YasConn) yacLobRead(lobLocator *C.YapiLobLocator, lobLen uint64) ([]
 		readBuffer := byteBufferPool.Get().([]byte)
 		buf := (*C.uint8_t)((unsafe.Pointer)(&readBuffer[0]))
 		if err := yapiLobRead(conn.Conn, lobLocator, &bytes, buf); err != nil {
+			byteBufferPool.Put(readBuffer)
 			return nil, err
 		}
 		data = append(data, readBuffer[:uint64(bytes)]...)
 		if uint64(bytes) <= 0 {
+			byteBufferPool.Put(readBuffer)
 			break
 		}
 	}
@@ -301,6 +315,7 @@ func (conn *YasConn) yacLobWrite(lobLocator *C.YapiLobLocator, data []byte) erro
 	bufLen := uint64(_LobBufLen)
 	dataLen := uint64(len(data))
 	writeBuffer := byteBufferPool.Get().([]byte)
+	defer byteBufferPool.Put(writeBuffer)
 	if _LobBufLen > dataLen {
 		bufLen = dataLen
 		copy(writeBuffer, data)
@@ -342,12 +357,12 @@ func (conn *YasConn) handleYacCancel(ctx context.Context, done <-chan struct{}) 
 		select {
 		case <-done:
 		default:
-			_ = conn.yacCancel()
+			_ = conn.Cancel()
 		}
 	}
 }
 
-func (conn *YasConn) yacCancel() error {
+func (conn *YasConn) Cancel() error {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 	if conn.closed {
@@ -364,10 +379,23 @@ func (conn *YasConn) ResetSession(ctx context.Context) error {
 		return driver.ErrBadConn
 	}
 	status := conn.getServerStatus()
-	if status == SS_NORMAL || status == SS_UNKNOWN {
+	switch status {
+	case SS_NORMAL:
 		return nil
+	case SS_UNKNOWN:
+		return conn.checkSessionAlive(ctx)
+	default:
+		return driver.ErrBadConn
 	}
-	return driver.ErrBadConn
+}
+
+func (conn *YasConn) checkSessionAlive(ctx context.Context) error {
+	stmt, err := conn.PrepareContext(ctx, "select 1 from dual")
+	if err != nil {
+		return driver.ErrBadConn
+	}
+	defer stmt.Close()
+	return nil
 }
 
 func (conn *YasConn) yapiTimestampToTime(dateTime *C.YapiTimestamp, zone bool) (*time.Time, error) {
@@ -396,7 +424,7 @@ func (conn *YasConn) yapiTimestampToTime(dateTime *C.YapiTimestamp, zone bool) (
 	}
 
 	if !zone {
-		aTime := time.Date(int(year), time.Month(month), int(day), int(hour), int(minute), int(second), int(fraction), time.UTC)
+		aTime := time.Date(int(year), time.Month(month), int(day), int(hour), int(minute), int(second), microToNano(fraction), time.UTC)
 		return &aTime, nil
 	}
 
@@ -407,7 +435,7 @@ func (conn *YasConn) yapiTimestampToTime(dateTime *C.YapiTimestamp, zone bool) (
 		return nil, err
 	}
 
-	aTime := time.Date(int(year), time.Month(month), int(day), int(hour), int(minute), int(second), int(fraction),
+	aTime := time.Date(int(year), time.Month(month), int(day), int(hour), int(minute), int(second), microToNano(fraction),
 		timezoneToLocation(int64(timeZoneHour), int64(timeZoneMin)))
 
 	return &aTime, nil
@@ -424,14 +452,17 @@ func (conn *YasConn) timeToYapiTimestamp(dest *time.Time) (*C.YapiTimestamp, err
 	hour := C.uint8_t(dest.Hour())
 	mintue := C.uint8_t(dest.Minute())
 	second := C.uint8_t(dest.Second())
-	fraction := C.uint32_t(dest.Nanosecond())
+	fraction := nanoToMicro(dest.Nanosecond())
 
 	if err := yapiTimestampSetTimestamp(tpointer, year, month, day, hour, mintue, second, fraction); err != nil {
 		C.free(p)
 		return nil, err
 	}
-	return tpointer, nil
 
+	_, offset := dest.Zone()
+	tpointer.bias = C.int16_t(offset / 60)
+
+	return tpointer, nil
 }
 
 func (conn *YasConn) stringToYapiDSInterval(dest *string) (*C.YapiDSInterval, error) {
@@ -471,6 +502,100 @@ func (conn *YasConn) yapiDSIntervalToString(interval *C.YapiDSInterval) (string,
 
 	t := time.Date(0, 0, int(day), int(hour), int(mintue), int(second), int(fraction), time.UTC)
 	return FormatTime(conn.dsIntervalFormat, t), nil
+}
+
+func (conn *YasConn) dsIntervalToYapiDSInterval(ds DSInterval) (*C.YapiDSInterval, error) {
+
+	var dsInterval C.YapiDSInterval
+	p := C.malloc(C.size_t(unsafe.Sizeof(dsInterval)))
+	dsPointer := (*C.YapiDSInterval)(p)
+
+	day := C.int32_t(ds.Day)
+	hour := C.int32_t(ds.DayTime.Hour())
+	minute := C.int32_t(ds.DayTime.Minute())
+	second := C.int32_t(ds.DayTime.Second())
+	fraction := C.int32_t(ds.DayTime.Nanosecond() / 1e3) // 数据库保存的精度为微妙
+
+	if err := yapiDSIntervalSetDaySecond(
+		dsPointer,
+		day,
+		hour,
+		minute,
+		second,
+		fraction,
+	); err != nil {
+		C.free(p)
+		return nil, err
+	}
+
+	return dsPointer, nil
+}
+
+func (conn *YasConn) yapiDSIntervalToDSInterval(cdsi C.YapiDSInterval) (DSInterval, error) {
+
+	var (
+		day      C.int32_t
+		hour     C.int32_t
+		minute   C.int32_t
+		second   C.int32_t
+		fraction C.int32_t // 拿到的结果为微妙
+	)
+	if err := yapiDSIntervalGetDaySecond(
+		cdsi,
+		&day,
+		&hour,
+		&minute,
+		&second,
+		&fraction,
+	); err != nil {
+		return DSInterval{}, err
+	}
+
+	dsi := DSInterval{
+		Day:     int32(day),
+		DayTime: time.Date(0, 0, 0, int(hour), int(minute), int(second), int(fraction)*1e3, time.UTC),
+	}
+
+	return dsi, nil
+}
+
+func (conn *YasConn) ymIntervalToYapiYmInterval(ym YMInterval) (*C.YapiYMInterval, error) {
+
+	var ymInterval C.YapiYMInterval
+	p := C.malloc(C.size_t(unsafe.Sizeof(ymInterval)))
+	ymPointer := (*C.YapiYMInterval)(p)
+
+	year := C.int32_t(ym.Year)
+	month := C.int32_t(ym.Month)
+
+	if err := yapiYMIntervalSetYearMonth(ymPointer, year, month); err != nil {
+		C.free(p)
+		return nil, err
+	}
+
+	return ymPointer, nil
+}
+
+func (conn *YasConn) yapiYMIntervalToYmInterval(cymi C.YapiYMInterval) (YMInterval, error) {
+
+	var (
+		year  C.int32_t
+		month C.int32_t
+	)
+	if err := yapiYMIntervalGetYearMonth(
+		cymi,
+		&year,
+		&month,
+	); err != nil {
+		return YMInterval{}, err
+	}
+
+	ymi := YMInterval{
+		Year:  int32(year),
+		Month: int32(month),
+	}
+
+	return ymi, nil
 }
 
 func (conn *YasConn) yapiYMIntervalToString(interval *C.YapiYMInterval) (string, error) {
@@ -555,6 +680,7 @@ func PrepareContext(conn *YasConn, ctx context.Context, query string) (*YasStmt,
 			SqlType:  (uint32)(cst),
 			Sqlstr:   nQuery,
 			prepared: false,
+			ctx:      ctx,
 		}, nil
 	}
 	queryP := C.CString(nQuery)
@@ -581,9 +707,20 @@ func PrepareContext(conn *YasConn, ctx context.Context, query string) (*YasStmt,
 		SqlType:  (uint32)(sqlType),
 		Sqlstr:   nQuery,
 		prepared: true,
+		ctx:      ctx,
 	}
 
 	return yasStmt, nil
+}
+
+// nanoToMicro converts Go nanoseconds to C library microseconds.
+func nanoToMicro(nanosecond int) C.uint32_t {
+	return C.uint32_t(nanosecond / 1000)
+}
+
+// microToNano converts C library microseconds to Go nanoseconds.
+func microToNano(microsecond C.uint32_t) int {
+	return int(microsecond) * 1000
 }
 
 func timezoneToLocation(hour int64, minute int64) *time.Location {
@@ -608,4 +745,59 @@ func timezoneToLocation(hour int64, minute int64) *time.Location {
 
 	// use location from timeLocations cache
 	return timeLocations[12+hour]
+}
+
+// vectorRead 从连接读取 vector 数据
+func (conn *YasConn) vectorRead(data unsafe.Pointer) (*Vector, error) {
+	if data == nil {
+		return nil, nil
+	}
+
+	// 1. 从 data 中获取 vector 指针 (data 是 **YapiVector，需要解引用)
+	vectorPtrPtr := (**C.YapiVector)(data)
+	if vectorPtrPtr == nil {
+		return nil, nil
+	}
+	vectorPtr := *vectorPtrPtr
+	if vectorPtr == nil {
+		return nil, nil
+	}
+
+	// 2. 获取 vector 格式
+	var format C.YapiVectorFormat
+	if err := yapiVectorGetFormat(vectorPtr, &format); err != nil {
+		return nil, err
+	}
+
+	// 3. 获取 vector 维度
+	var dim C.uint16_t
+	if err := yapiVectorGetDimension(vectorPtr, &dim); err != nil {
+		return nil, err
+	}
+
+	// 4. 根据格式分配缓冲区并读取数据
+	vecFormat := VectorFormat(format)
+	buf, arrayLen, err := createVectorBufferByFormat(vecFormat, uint16(dim))
+	if err != nil {
+		return nil, err
+	}
+
+	var cArrayLen C.uint32_t = C.uint32_t(arrayLen)
+	var array *C.uint8_t
+	switch b := buf.(type) {
+	case []float32:
+		array = (*C.uint8_t)(unsafe.Pointer(&b[0]))
+	case []float64:
+		array = (*C.uint8_t)(unsafe.Pointer(&b[0]))
+	case []int8:
+		array = (*C.uint8_t)(unsafe.Pointer(&b[0]))
+	default:
+		return nil, fmt.Errorf("unsupported buffer type: %T", buf)
+	}
+
+	if err := yapiVectorToArray(vectorPtr, format, &dim, array, &cArrayLen, 0); err != nil {
+		return nil, err
+	}
+
+	return &Vector{Data: buf, Dim: uint16(dim), Format: vecFormat}, nil
 }

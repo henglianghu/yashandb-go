@@ -216,6 +216,24 @@ func yapiStmtCreate(conn *C.YapiConnect, stmt **C.YapiStmt) error {
 	return checkYasError(C.yapiStmtCreate(conn, stmt))
 }
 
+func yapiCursorStmtCreate(conn *C.YapiConnect, stmt **C.YapiStmt, handle *C.YacHandle) error {
+	if conn == nil {
+		return ErrNoConnect()
+	}
+	if handle == nil {
+		return ErrNoCursorHandle()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiCursorStmtCreate(conn, stmt, handle))
+}
+
+func yapiReleaseCursorStmt(stmt *C.YapiStmt) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiReleaseCursorStmt(stmt))
+}
+
 func yapiReleaseStmt(stmt *C.YapiStmt) error {
 	if stmt == nil {
 		return ErrStmtNoOpen()
@@ -223,6 +241,15 @@ func yapiReleaseStmt(stmt *C.YapiStmt) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	return checkYasError(C.yapiReleaseStmt(stmt))
+}
+
+func yapiReleaseHandle(handle *C.YacHandle) error {
+	if handle == nil {
+		return ErrNoCursorHandle()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiReleaseHandle(handle))
 }
 
 func yapiNumResultCols(stmt *C.YapiStmt, columns *C.int16_t) error {
@@ -567,10 +594,22 @@ func yapiDSIntervalGetDaySecond(dsInterval C.YapiDSInterval, day *C.int32_t, hou
 	return checkYasError(C.yapiDSIntervalGetDaySecond(dsInterval, day, hour, mintue, second, fraction))
 }
 
+func yapiDSIntervalSetDaySecond(dsInterval *C.YapiDSInterval, day C.int32_t, hour C.int32_t, mintue C.int32_t, second C.int32_t, fraction C.int32_t) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiDSIntervalSetDaySecond(dsInterval, day, hour, mintue, second, fraction))
+}
+
 func yapiYMIntervalGetYearMonth(ymInterval C.YapiYMInterval, year *C.int32_t, month *C.int32_t) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	return checkYasError(C.yapiYMIntervalGetYearMonth(ymInterval, year, month))
+}
+
+func yapiYMIntervalSetYearMonth(ymInterval *C.YapiYMInterval, year C.int32_t, month C.int32_t) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiYMIntervalSetYearMonth(ymInterval, year, month))
 }
 
 func yapiNumberToText(
@@ -649,4 +688,101 @@ func yapiFreeParamList(hParamList C.YapiPointer) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	return checkYasError(C.yapiFreeParamList(hParamList))
+}
+
+func yapiDescAlloc2(env *C.YapiEnv, desc *unsafe.Pointer, descType C.YapiDescType) error {
+	if env == nil {
+		return ErrEnvInit()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiDescAlloc2(env, desc, descType))
+}
+
+func yapiDescFree2(env *C.YapiEnv, desc unsafe.Pointer, descType C.YapiDescType) error {
+	if env == nil {
+		return ErrEnvInit()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiDescFree2(env, desc, descType))
+}
+
+func yapiVectorToArray(vector *C.YapiVector, format C.YapiVectorFormat, dim *C.uint16_t, array *C.uint8_t, arrayLen *C.uint32_t, mode C.uint32_t) error {
+	if vector == nil {
+		return ErrVectorNil()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiVectorToArray(vector, format, dim, array, arrayLen, mode))
+}
+
+func yapiVectorToText(vector *C.YapiVector, text *C.char, textlen *C.uint32_t, mode C.uint32_t) error {
+	if vector == nil {
+		return ErrVectorNil()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiVectorToText(vector, text, textlen, mode))
+}
+
+func yapiVectorFromText(vector *C.YapiVector, format C.YapiVectorFormat, dim C.uint16_t, text *C.char, textlen C.uint32_t, mode C.uint32_t) error {
+	if vector == nil {
+		return ErrVectorNil()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiVectorFromText(vector, format, dim, text, textlen, mode))
+}
+
+func yapiVectorFromArray(vector *C.YapiVector, format C.YapiVectorFormat, dim C.uint16_t, array *C.uint8_t, arrayLen C.uint32_t, mode C.uint32_t) error {
+	if vector == nil {
+		return ErrVectorNil()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiVectorFromArray(vector, format, dim, array, arrayLen, mode))
+}
+
+func yapiVectorGetFormat(vector *C.YapiVector, format *C.YapiVectorFormat) error {
+	if vector == nil {
+		return ErrVectorNil()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiVectorGetFormat(vector, format))
+}
+
+func yapiVectorGetDimension(vector *C.YapiVector, dim *C.uint16_t) error {
+	if vector == nil {
+		return ErrVectorNil()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiVectorGetDimension(vector, dim))
+}
+
+// yapiColumnDescGetVectorFormat returns the vector format from column descriptor.
+// The C function does not fail, so no error is returned.
+func yapiColumnDescGetVectorFormat(desc *C.YapiColumnDesc) uint8 {
+	if desc == nil {
+		return 0
+	}
+	return uint8(C.yapiColumnDescGetVectorFormat(desc))
+}
+
+// yapiColumnDescGetPrecision returns the precision from column descriptor.
+func yapiColumnDescGetPrecision(desc *C.YapiColumnDesc) uint8 {
+	if desc == nil {
+		return 0
+	}
+	return uint8(C.yapiColumnDescGetPrecision(desc))
+}
+
+// yapiColumnDescGetScale returns the scale from column descriptor.
+func yapiColumnDescGetScale(desc *C.YapiColumnDesc) int8 {
+	if desc == nil {
+		return 0
+	}
+	return int8(C.yapiColumnDescGetScale(desc))
 }

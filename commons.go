@@ -17,6 +17,7 @@ package yasdb
 #include "yacapi.go.h"
 #include <stdio.h>
 #include <stdlib.h>
+
 */
 import "C"
 
@@ -33,10 +34,8 @@ import (
 
 const (
 	_LobBufLen      = 8192
-	_OutputBindSize = 8192
+	_OutputBindSize = 65535
 	_DefaultSize    = 32*1024 + 1
-
-	_TimeZoneLayout = "2006-01-02 15:04:05.999999 -07:00"
 )
 
 type valueFreeType int8
@@ -83,18 +82,13 @@ var (
 	notFree    valueFreeType = 0
 	normalFree valueFreeType = 1
 	lobFree    valueFreeType = 2
+	cursorFree valueFreeType = 3
+	vectorFree valueFreeType = 4
 
 	commentRegStr_1 = `\/\*([^*]|\*+[^*/])*\*+\/`
 	commentReg1, _  = regexp.Compile(commentRegStr_1)
 	commentRegStr_2 = `^--.*`
 	commentReg2, _  = regexp.Compile(commentRegStr_2)
-
-	_ResetSessionErrCodes = []string{
-		"YAS-08012", // connection has been disconnected
-		"YAS-00406", // connection is closed
-		"YAS-06010", // the database is not in readwrite mode
-		"YAS-08010", // invalid connection
-	}
 )
 
 type bindStruct struct {
@@ -165,6 +159,18 @@ func yacPointerToUint64(p C.YapiPointer) uint64 {
 	return uint64(*(*C.uint64_t)(p))
 }
 
+func yacPointerToUint32(p C.YapiPointer) uint32 {
+	return uint32(*(*C.uint32_t)(p))
+}
+
+func yacPointerToUint16(p C.YapiPointer) uint16 {
+	return uint16(*(*C.uint16_t)(p))
+}
+
+func yacPointerToUint8(p C.YapiPointer) uint8 {
+	return uint8(*(*C.uint8_t)(p))
+}
+
 func yacPointerToFloat64(p C.YapiPointer) float64 {
 	return float64(*(*C.double)(p))
 }
@@ -213,6 +219,20 @@ func freeFetchRow(row *yasRow) {
 		C.yapiLobDescFree(unsafe.Pointer(*lobLocator), row.yacType)
 	case normalFree:
 		C.free(row.Data)
+	case cursorFree:
+		handle := (*C.YacHandle)(unsafe.Pointer(row.Data))
+		_ = yapiReleaseHandle(handle)
+	case vectorFree:
+		if row.Data != nil && row.env != nil {
+			// 获取实际的 descriptor 指针
+			// row.Data 指向的是一个 Go 分配的 *unsafe.Pointer 变量，该变量包含实际的 descriptor
+			ptrToDesc := (*unsafe.Pointer)(row.Data)
+			actualDesc := *ptrToDesc
+			if actualDesc != nil {
+				// 使用包装函数，避免传递 Go 指针地址给 C
+				yapiDescFree2(row.env, actualDesc, C.YAPI_TYPE_VECTOR)
+			}
+		}
 	}
 
 	if row.Indicator != nil {
@@ -305,19 +325,6 @@ func rmComment(query string) string {
 	return nQuery
 }
 
-func isResetSessionErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	errStr := err.Error()
-	for _, errCode := range _ResetSessionErrCodes {
-		if strings.Contains(errStr, errCode) {
-			return true
-		}
-	}
-	return false
-}
-
 func releaseConn(yasConn *C.YapiConnect) error {
 	if yasConn == nil {
 		return nil
@@ -379,7 +386,15 @@ func GetDatabaseTypeName(yapiType uint32) string {
 		return "INTEGER"
 	case C.YAPI_TYPE_BIGINT:
 		return "BIGINT"
-	case C.YAPI_TYPE_FLOAT:
+	case C.YAPI_TYPE_UTINYINT:
+		return "UTINYINT"
+	case C.YAPI_TYPE_USMALLINT:
+		return "USMALLINT"
+	case C.YAPI_TYPE_UINTEGER:
+		return "UINTEGER"
+	case C.YAPI_TYPE_UBIGINT:
+		return "UBIGINT"
+	case C.YAPI_TYPE_FLOAT, C.YAPI_TYPE_NUMBER_FLOAT:
 		return "FLOAT"
 	case C.YAPI_TYPE_DOUBLE:
 		return "DOUBLE"
@@ -419,10 +434,16 @@ func GetDatabaseTypeName(yapiType uint32) string {
 		return "INTERVAL DAY TO SECOND"
 	case C.YAPI_TYPE_XML:
 		return "XMLTYPE"
+	case C.YAPI_TYPE_VECTOR:
+		return "VECTOR"
 	case C.YAPI_TYPE_TIMESTAMP_LTZ:
 		return "TIMESTAMP WITH LOCAL TIME ZONE"
 	case C.YAPI_TYPE_TIMESTAMP_TZ:
 		return "TIMESTAMP WITH TIME ZONE"
+	case C.YAPI_TYPE_BFILE:
+		return "BFILE"
+	case C.YAPI_TYPE_CURSOR:
+		return "CURSOR"
 	default:
 		return ""
 	}
@@ -452,7 +473,7 @@ func GetDatabaseTypeSize(yType C.YapiType) int32 {
 }
 
 func boolOutBindParam(dest *bool, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
-	bindSize = C.int32_t(unsafe.Sizeof(bool(false)))
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
 	p := C.malloc(C.size_t(bindSize))
 	if in {
 		*(*C.bool)(p) = C.bool(*dest)
@@ -479,7 +500,7 @@ func bitOutBindParam(dest *[]byte, in bool) (bindSize, bufLen C.int32_t, value C
 }
 
 func int64OutBindParam(dest *int64, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
-	bindSize = C.int32_t(unsafe.Sizeof(int64(0)))
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
 	p := C.malloc(C.size_t(bindSize))
 	if in {
 		*(*C.int64_t)(p) = C.int64_t(*dest)
@@ -490,7 +511,7 @@ func int64OutBindParam(dest *int64, in bool) (bindSize, bufLen C.int32_t, value 
 }
 
 func int32OutBindParam(dest *int32, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
-	bindSize = C.int32_t(unsafe.Sizeof(int32(0)))
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
 	p := C.malloc(C.size_t(bindSize))
 	if in {
 		*(*C.int32_t)(p) = C.int32_t(*dest)
@@ -501,7 +522,7 @@ func int32OutBindParam(dest *int32, in bool) (bindSize, bufLen C.int32_t, value 
 }
 
 func int16OutBindParam(dest *int16, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
-	bindSize = C.int32_t(unsafe.Sizeof(int16(0)))
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
 	p := C.malloc(C.size_t(bindSize))
 	if in {
 		*(*C.int16_t)(p) = C.int16_t(*dest)
@@ -512,7 +533,7 @@ func int16OutBindParam(dest *int16, in bool) (bindSize, bufLen C.int32_t, value 
 }
 
 func int8OutBindParam(dest *int8, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
-	bindSize = C.int32_t(unsafe.Sizeof(int8(0)))
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
 	p := C.malloc(C.size_t(bindSize))
 	if in {
 		*(*C.int8_t)(p) = C.int8_t(*dest)
@@ -521,6 +542,51 @@ func int8OutBindParam(dest *int8, in bool) (bindSize, bufLen C.int32_t, value C.
 	indicator = bindSize
 	return
 }
+
+func uint64OutBindParam(dest *uint64, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
+	p := C.malloc(C.size_t(bindSize))
+	if in {
+		*(*C.uint64_t)(p) = C.uint64_t(*dest)
+	}
+	value = C.YapiPointer(p)
+	indicator = bindSize
+	return
+}
+
+func uint32OutBindParam(dest *uint32, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
+	p := C.malloc(C.size_t(bindSize))
+	if in {
+		*(*C.uint32_t)(p) = C.uint32_t(*dest)
+	}
+	value = C.YapiPointer(p)
+	indicator = bindSize
+	return
+}
+
+func uint16OutBindParam(dest *uint16, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
+	p := C.malloc(C.size_t(bindSize))
+	if in {
+		*(*C.uint16_t)(p) = C.uint16_t(*dest)
+	}
+	value = C.YapiPointer(p)
+	indicator = bindSize
+	return
+}
+
+func uint8OutBindParam(dest *uint8, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
+	p := C.malloc(C.size_t(bindSize))
+	if in {
+		*(*C.uint8_t)(p) = C.uint8_t(*dest)
+	}
+	value = C.YapiPointer(p)
+	indicator = bindSize
+	return
+}
+
 func dateOutBindParam(dest *time.Time, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
 	bindSize = 8
 	p := C.malloc(C.size_t(bindSize))
@@ -546,12 +612,14 @@ func timestampOutBindParam(dest *time.Time, _, in bool) (bindSize, bufLen C.int3
 		hour := C.uint8_t(dest.Hour())
 		mintue := C.uint8_t(dest.Minute())
 		second := C.uint8_t(dest.Second())
-		fraction := C.uint32_t(dest.Nanosecond())
+		fraction := nanoToMicro(dest.Nanosecond())
 		err = yapiTimestampSetTimestamp(tpointer, year, month, day, hour, mintue, second, fraction)
 		if err != nil {
 			C.free(p)
 			return
 		}
+		_, offset := dest.Zone()
+		tpointer.bias = C.int16_t(offset / 60)
 	}
 
 	value = C.YapiPointer(p)
@@ -560,7 +628,7 @@ func timestampOutBindParam(dest *time.Time, _, in bool) (bindSize, bufLen C.int3
 }
 
 func float64OutBindParam(dest *float64, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
-	bindSize = C.int32_t(unsafe.Sizeof(float64(0)))
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
 	p := C.malloc(C.size_t(bindSize))
 	if in {
 		*(*C.double)(p) = C.double(*dest)
@@ -571,7 +639,7 @@ func float64OutBindParam(dest *float64, in bool) (bindSize, bufLen C.int32_t, va
 }
 
 func float32OutBindParam(dest *float32, in bool) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
-	bindSize = C.int32_t(unsafe.Sizeof(float32(0)))
+	bindSize = C.int32_t(unsafe.Sizeof(dest))
 	p := C.malloc(C.size_t(bindSize))
 	if in {
 		*(*C.float)(p) = C.float(*dest)
@@ -616,6 +684,16 @@ func rawOutBindParam(dest *[]byte, size int, in bool) (bindSize, bufLen C.int32_
 	if n > 0 {
 		indicator = C.int32_t(n)
 	}
+	return
+}
+
+func cursorOutBindParam(dest *YasRows) (bindSize, bufLen C.int32_t, value C.YapiPointer, indicator C.int32_t) {
+	var handle C.YacHandle
+	bufLen = C.int32_t(unsafe.Sizeof(handle))
+	bindSize = bufLen
+	// data := (*C.YacHandle)(C.malloc(C.size_t(bufLen)))
+	data := (*C.YacHandle)(C.malloc(C.size_t(bufLen)))
+	value = C.YapiPointer(data)
 	return
 }
 

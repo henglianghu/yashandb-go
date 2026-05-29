@@ -295,7 +295,7 @@ YapiResult yapiDescAlloc2(YapiEnv* hEnv, void** desc, YapiDescType type)
     return yapiCliDescAlloc2(hEnv->envHandler, desc, type, &error);
 }
 
-YapiResult yapiDescFree2(YapiEnv* hEnv, void** desc, YapiDescType type)
+YapiResult yapiDescFree2(YapiEnv* hEnv, void* desc, YapiDescType type)
 {
     YapiErrorMsg error;
     yapiInitError(&error);

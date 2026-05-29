@@ -37,15 +37,6 @@ const (
 )
 
 const (
-	_DataPath = "./test"
-)
-
-const (
-	NormalConnErr     = "error connecting: "
-	IntegerPrimaryKey = "integer primary key"
-)
-
-const (
 	_DefaultDbTimestampFormat   = "yyyy-mm-dd hh24:mi:ss.ff"
 	_DefaultDbDateFormat        = "yyyy-mm-dd"
 	_DefaultDbTimeFormat        = "hh24:mi:ss.ff"
@@ -140,6 +131,17 @@ func GenYasconn(dsnStr string) (*YasConn, error) {
 		timestampTzFormat: dsn.timestampTzFormat,
 		dsIntervalFormat:  dsn.dsIntervalFormat,
 		ymIntervalFormat:  dsn.ymIntervalFormat,
+		compatVector:      dsn.compatVector,
+	}
+
+	if err := yasConn.setCompatVector(dsn.compatVector); err != nil {
+		_ = yasConn.Close()
+		return nil, err
+	}
+
+	if err := yasConn.setSslRootCer(dsn.sslRootCer); err != nil {
+		_ = yasConn.Close()
+		return nil, err
 	}
 
 	if err := yasConn.setHeartbeatEnable(dsn.heartbeatEnable); err != nil {
@@ -149,11 +151,6 @@ func GenYasconn(dsnStr string) (*YasConn, error) {
 
 	if err := yapiConnect2(conn, url, urlLen, user, userLen, password, pwLen); err != nil {
 		_ = releaseEnv(env)
-		return nil, err
-	}
-
-	if err := yasConn.setCompatVector(dsn.compatVector); err != nil {
-		_ = yasConn.Close()
 		return nil, err
 	}
 

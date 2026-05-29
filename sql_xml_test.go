@@ -3,7 +3,7 @@ package yasdb
 import "testing"
 
 func TestXml(t *testing.T) {
-	//runSqlTest(t, testXml)
+	runSqlTest(t, testXml)
 }
 
 func testXml(t *sqlTest) {
@@ -17,12 +17,12 @@ func testXml(t *sqlTest) {
 			{"c1", "xmltype"}, // xmltype改成了UDT，不好搞
 		},
 		execArgs: [][]interface{}{
-			{1, nil},
-			{2, "<data>sics & yashandb<data/>"},
+			{1, "<test></test>"},
+			{2, "<data>sics</data>"},
 		},
 		queryResult: [][]interface{}{
-			{int32(1), nil},
-			{int32(2), "<data>sics & yashandb<data/>"},
+			{int32(1), "<test></test>"},
+			{int32(2), "<data>sics</data>"},
 		},
 	}
 	t.genTableTest()

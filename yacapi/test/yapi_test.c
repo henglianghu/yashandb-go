@@ -14,10 +14,7 @@
     do {                          \
         YapiResult r = yapiFunc;  \
         if (r == YAPI_ERROR) {    \
-            YapiErrorInfo info;     \
-            yapiGetLastError(&info); \
-            printf("%s\n", info.message); \
-            return r;               \
+            return r;             \
         }                         \
     } while (0)
 

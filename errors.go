@@ -9,6 +9,7 @@ Home page: 	https://www.yashandb.com/
 package yasdb
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -95,8 +96,16 @@ func ErrUnknowType(v interface{}) *YasBaseError {
 	return &YasBaseError{Code: 1008, Msg: fmt.Sprintf("Unknow: %s", reflect.TypeOf(v).String())}
 }
 
+func ErrNoCursorHandle() *YasBaseError {
+	return &YasBaseError{Code: 1009, Msg: "yasdb cursor handle is null"}
+}
+
 func ErrOutputBindValue() *YasBaseError {
 	return &YasBaseError{}
+}
+
+func ErrVectorNil() *YasBaseError {
+	return &YasBaseError{Code: 1010, Msg: "vector is nil"}
 }
 
 func isUnknownAttributeIdErr(err error) bool {
@@ -111,4 +120,15 @@ func isLoadSymbolErr(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), _LoadSymbolCode)
+}
+
+func isFeatureUnSupported(err error) bool {
+	if err == nil {
+		return false
+	}
+	var yasErr *YasDBError
+	if !errors.As(err, &yasErr) {
+		return false
+	}
+	return yasErr.Code == 8052
 }

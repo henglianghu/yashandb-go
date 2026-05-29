@@ -1,4 +1,4 @@
-//go:build require
+﻿//go:build require
 // +build require
 
 /*

@@ -7,6 +7,29 @@ import (
 	"time"
 )
 
+type DTF int8
+
+const (
+	DateTimeMicroZone DTF = iota
+	DateTimeZone
+	DateTimeMicro
+	DateTime
+	Date
+	TimeMicro
+	Time
+)
+
+// DateTimeFormats holds all datetime format strings
+var DateTimeFormats = map[DTF]string{
+	DateTimeMicroZone: "2006-01-02 15:04:05.999999 -07:00",
+	DateTimeZone:      "2006-01-02 15:04:05 -07:00",
+	DateTimeMicro:     "2006-01-02 15:04:05.999999",
+	DateTime:          "2006-01-02 15:04:05",
+	Date:              "2006-01-02",
+	TimeMicro:         "15:04:05.999999",
+	Time:              "15:04:05",
+}
+
 /*
 取值范围/格式：[0001-01-01 00:00:00.000000,9999-12-31 23:59:59.999999]，[-15:59~+15:59]，支持的格式符：'YYYY'/'YYY'/'YY'/'Y'/'MM'/'MON'/'MONTH'/'DD'/'D'/'DAY'/'HH'/'HH12'/'HH24'/'MI'/'SS'/'AM'/'A.M.'/'PM'/'P.M.'/'FF'/'FF1'/'FF2'/'FF3'/'FF4'/'FF5'/'FF6'/'FF7'/'FF8'/'FF9'/'TZH'/'TZM'
 

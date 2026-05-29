@@ -66,7 +66,6 @@ func (st *sqlTest) getDBVersion() {
 	if err != nil {
 		st.T.Fatalf("get db version failed %s", err)
 	}
-	defer r.Close()
 	if r.Next() {
 		version := ""
 		if err := r.Scan(&version); err != nil {
@@ -74,6 +73,18 @@ func (st *sqlTest) getDBVersion() {
 		}
 		st.DBVersion = version
 	}
+}
+
+func (st *sqlTest) IsYasdbMode() bool {
+	r, err := st.DB.Query("select VALUE from v$parameter where name = 'EMPTY_STRING_AS_NULL'")
+	if err != nil {
+		return true
+	}
+	yasMode := true
+	if r.Next() {
+		_ = r.Scan(&yasMode) // EMPTY_STRING_AS_NULL = FALSE  is mysql mode
+	}
+	return yasMode
 }
 
 func (st *sqlTest) isUdtXmltype(columnType string) bool {
@@ -95,6 +106,17 @@ func (st *sqlTest) isToTimestampTzSupport() bool {
 		st.getDBVersion()
 	}
 	c, err := CompareVersion(st.DBVersion, "23.4.2.100")
+	if err != nil {
+		return false
+	}
+	return c >= 0
+}
+
+func (st *sqlTest) isBfileSupport() bool {
+	if st.DBVersion == "" {
+		st.getDBVersion()
+	}
+	c, err := CompareVersion(st.DBVersion, "23.4.2.0")
 	if err != nil {
 		return false
 	}
@@ -238,6 +260,13 @@ func (st *sqlTest) getRowsTest() ([][]interface{}, error) {
 	}
 
 	return result, nil
+}
+
+func (st *sqlTest) getRowsColumnTypes() ([]*sql.ColumnType, error) {
+	rows := st.mustQuery(st.query, st.queryArgs...)
+	defer rows.Close()
+
+	return rows.ColumnTypes()
 }
 
 func (st *sqlTest) resultComparison(actualResults [][]interface{}, expectedResults [][]interface{}) error {

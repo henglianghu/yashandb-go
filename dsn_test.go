@@ -7,6 +7,15 @@ import (
 	"testing"
 )
 
+const (
+	_DataPath = "./test"
+)
+
+const (
+	NormalConnErr     = "error connecting: "
+	IntegerPrimaryKey = "integer primary key"
+)
+
 func TestParseDsn(t *testing.T) {
 
 	os.Mkdir(_DataPath, 0o755)
@@ -464,9 +473,9 @@ func TestParseDsn(t *testing.T) {
 
 	for index, dt := range dsnTests {
 		fmt.Println(dt.dsnStr)
-		dsn, _ := ParseDSN(dt.dsnStr)
+		dsn, err := ParseDSN(dt.dsnStr)
 		if !reflect.DeepEqual(dsn, dt.expectedDSN) {
-			t.Errorf("test case:%d. failed to parse dsn:\n%s  expected \n%+v, actual \n%+v", index, dt.dsnStr, dt.expectedDSN, dsn)
+			t.Errorf("test case:%d. failed to parse dsn:\n%s  expected \n%+v, actual \n%+v err: %+v", index, dt.dsnStr, dt.expectedDSN, dsn, err)
 		}
 	}
 }

@@ -1,4 +1,4 @@
-package yasdb
+﻿package yasdb
 
 import (
 	"context"
@@ -151,11 +151,10 @@ func TestYasConn_ResetSession(t *testing.T) {
 		name: "正常状态",
 		prepare: func() (*YasConn, context.Context) {
 			hConn := getYasConn(t)
-			stmt, err := hConn.Prepare("select 1 from dual")
+			_, err := hConn.Prepare("select 1 from dual")
 			if err != nil {
 				t.Fatalf("error db exec: %v", err)
 			}
-			defer stmt.Close()
 			return hConn, context.Background()
 		},
 		wantErr: nil,

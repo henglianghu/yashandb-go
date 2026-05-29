@@ -18,8 +18,10 @@ import "C"
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"unsafe"
 )
 
@@ -68,15 +70,97 @@ var (
 )
 
 type PlsqlDebug struct {
-	Stmt *YasStmt
+	conn        *YasConn
+	Stmt        *YasStmt
+	enableStmt  *YasStmt
+	getLineStmt *YasStmt
+	ctx         context.Context
+
+	config        *debugConfig
+	line          string
+	getLineStatus int32
 }
 
-func NewPlsqlDebug(dsn string, sql string, args ...any) (*PlsqlDebug, error) {
-	stmt, err := GenPdbgStatement(dsn, sql, args...)
+type debugConfig struct {
+	enableOutput     bool
+	outputCacheSize  uint32
+	outputMaxLineLen uint32
+	callTemplate     string
+	callArgs         []any
+}
+
+type debugConfigOpt func(*debugConfig)
+
+func WithDebugCallTempalate(call string, args ...any) debugConfigOpt {
+	return func(dc *debugConfig) {
+		dc.callTemplate = call
+		dc.callArgs = append(dc.callArgs, args...)
+	}
+}
+
+func WithDebugEnableOutput() debugConfigOpt {
+	return func(dc *debugConfig) {
+		dc.enableOutput = true
+	}
+}
+
+func WithDebugOutputCacheSize(cacheSize uint32) debugConfigOpt {
+	return func(dc *debugConfig) {
+		dc.outputCacheSize = cacheSize
+	}
+}
+
+func WithDebugOutputMaxLineLen(maxLineLen uint32) debugConfigOpt {
+	return func(dc *debugConfig) {
+		dc.outputMaxLineLen = maxLineLen
+	}
+}
+
+func defaultDebugConfig() *debugConfig {
+	return &debugConfig{
+		enableOutput:     false,
+		outputCacheSize:  1000000,
+		outputMaxLineLen: 65534,
+	}
+}
+
+func NewPlsqlDebug(dsn string, opts ...debugConfigOpt) (*PlsqlDebug, error) {
+	config := defaultDebugConfig()
+	for _, opt := range opts {
+		opt(config)
+	}
+	if err := validateDebugConfig(config); err != nil {
+		return nil, err
+	}
+	conn, err := GenYasconn(dsn)
 	if err != nil {
 		return nil, err
 	}
-	return &PlsqlDebug{Stmt: stmt}, nil
+	ctx := context.Background()
+	stmt, err := genPdbgStatement(ctx, conn, config.callTemplate, config.callArgs...)
+	if err != nil {
+		return nil, err
+	}
+	plsqlDebug := &PlsqlDebug{
+		ctx:    ctx,
+		Stmt:   stmt,
+		config: config,
+		conn:   conn,
+	}
+	if config.enableOutput {
+		if err := initDebugOutputStmt(ctx, plsqlDebug); err != nil {
+			return nil, err
+		}
+	}
+	return plsqlDebug, nil
+
+}
+
+func validateDebugConfig(config *debugConfig) error {
+	if len(config.callTemplate) <= 0 {
+		return errors.New("call template must be provided")
+	}
+	return nil
 }
 
 func (p *PlsqlDebug) Start(objId uint64, subId uint16) error {
@@ -168,19 +252,47 @@ func (p *PlsqlDebug) GetAllFrameAttrs() ([]*PdbgFrameData, error) {
 }
 
 func (p *PlsqlDebug) Close() error {
-	return PdbgStatementClose(p.Stmt)
+
+	stmts := []*YasStmt{p.Stmt}
+	if p.config.enableOutput {
+		stmts = append(stmts, p.enableStmt)
+		stmts = append(stmts, p.getLineStmt)
+	}
+	for _, stmt := range stmts {
+		if err := PdbgStatementClose(stmt); err != nil {
+			return nil
+		}
+	}
+	return p.conn.Close()
 }
 
 func (p *PlsqlDebug) GetBindOutValue() error {
 	return PbdgGetBindOutValue(p.Stmt)
 }
 
-func GenPdbgStatement(dsn string, sql string, args ...any) (*YasStmt, error) {
-	conn, err := GenYasconn(dsn)
-	if err != nil {
-		return nil, err
+func (p *PlsqlDebug) GetOutput() ([]string, error) {
+	var res []string
+	if !p.config.enableOutput {
+		return res, nil
 	}
-	stmt, err := PrepareContext(conn, context.Background(), sql)
+	if p.getLineStmt == nil {
+		return nil, errors.New("output getLine statment is not init")
+	}
+	for {
+		_, err := p.getLineStmt.exec()
+		if err != nil {
+			return nil, err
+		}
+		if p.getLineStatus != 0 {
+			break
+		}
+		res = append(res, p.line)
+	}
+	return res, nil
+}
+
+func genPdbgStatement(ctx context.Context, conn *YasConn, sql string, args ...any) (*YasStmt, error) {
+	stmt, err := PrepareContext(conn, ctx, sql)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -188,7 +300,6 @@ func GenPdbgStatement(dsn string, sql string, args ...any) (*YasStmt, error) {
 	if len(args) == 0 {
 		return stmt, nil
 	}
-
 	nArgs, err := ConvertToNameValue(args...)
 	if err != nil {
 		return nil, err
@@ -199,6 +310,35 @@ func GenPdbgStatement(dsn string, sql string, args ...any) (*YasStmt, error) {
 		return nil, err
 	}
 	return stmt, nil
+}
+
+func initDebugOutputStmt(ctx context.Context, debug *PlsqlDebug) error {
+	conn := debug.conn
+	config := debug.config
+	enableStmt, err := genPdbgStatement(ctx, conn, "BEGIN DBMS_OUTPUT.ENABLE(?); END;", config.outputCacheSize)
+	if err != nil {
+		return err
+	}
+	if _, err := enableStmt.exec(); err != nil {
+		return err
+	}
+	debug.enableStmt = enableStmt
+	lineOut, err := NewOutputBindValue(&debug.line, WithTypeVarchar(), WithBindSize(config.outputMaxLineLen))
+	if err != nil {
+		return err
+	}
+	lineStatusOut, err := NewOutputBindValue(&debug.getLineStatus, WithTypeInteger())
+	if err != nil {
+		return err
+	}
+	lineArgs := sql.Out{Dest: lineOut}
+	getLineStatusArgs := sql.Out{Dest: lineStatusOut}
+	getLineStmt, err := genPdbgStatement(ctx, conn, "BEGIN DBMS_OUTPUT.GET_LINE(?,?); END;", lineArgs, getLineStatusArgs)
+	if err != nil {
+		return err
+	}
+	debug.getLineStmt = getLineStmt
+	return nil
 }
 
 func PdbgStart(stmt *YasStmt, objId uint64, subId uint16) error {
@@ -241,7 +381,7 @@ func PdbgStatementClose(stmt *YasStmt) error {
 	if err := stmt.Close(); err != nil {
 		return err
 	}
-	return stmt.Conn.Close()
+	return nil
 }
 
 func PdbgDeleteAllBreakpoints(stmt *YasStmt) error {
@@ -510,18 +650,18 @@ func PdbgGetVarAttrs(stmt *YasStmt, id uint32, attr DebugVarAttr, value interfac
 		*data = uint8(*outValue)
 
 	case DBG_VAR_ATTR_IS_GLOBAL:
-		data, ok := value.(*bool)
+		data, ok := value.(*uint8)
 		if !ok {
-			return fmt.Errorf("the value parameter type must be *bool")
+			return fmt.Errorf("the value parameter type must be *uint8")
 		}
 
 		stringLen := C.int32_t(0)
-		outValue := new(C.bool)
+		outValue := new(C.uint8_t)
 		err := yapiPdbgGetVarAttrs(stmt.Stmt, C.uint32_t(id), C.YAPI_DBG_VAR_ATTR_IS_GLOBAL, C.YapiPointer(outValue), 1, &stringLen)
 		if err != nil {
 			return err
 		}
-		*data = bool(*outValue)
+		*data = uint8(*outValue)
 
 	case DBG_VAR_ATTR_NAME:
 		data, ok := value.(*string)
@@ -610,6 +750,12 @@ func PdbgGetVarValue(stmt *YasStmt, id uint32) (string, error) {
 		value = C.YapiPointer(mallocBytes(uint32(bufLen)))
 	}
 
+	indicator := new(C.int32_t)
+	err = yapiPdbgGetVarValue(stmt.Stmt, C.uint32_t(id), C.uint32_t(bindType), value, C.int32_t(bufLen), indicator)
+	if err != nil {
+		return "", err
+	}
+
 	defer func() {
 		if isLob {
 			lobLocator := (**C.YapiLobLocator)(unsafe.Pointer(value))
@@ -618,12 +764,6 @@ func PdbgGetVarValue(stmt *YasStmt, id uint32) (string, error) {
 			C.free(unsafe.Pointer(value))
 		}
 	}()
-
-	indicator := new(C.int32_t)
-	err = yapiPdbgGetVarValue(stmt.Stmt, C.uint32_t(id), C.uint32_t(bindType), value, C.int32_t(bufLen), indicator)
-	if err != nil {
-		return "", err
-	}
 
 	if *indicator == C.YAPI_NULL_DATA {
 		return "", nil
@@ -637,7 +777,16 @@ func PdbgGetVarValue(stmt *YasStmt, id uint32) (string, error) {
 		}
 		return string(byteValue), nil
 	}
-	return C.GoString((*C.char)(value)), nil
+	rawStr := C.GoString((*C.char)(value))
+
+	switch actualType {
+	case C.YAPI_TYPE_DATE, C.YAPI_TYPE_SHORTDATE, C.YAPI_TYPE_SHORTTIME, C.YAPI_TYPE_TIMESTAMP, C.YAPI_TYPE_TIMESTAMP_TZ, C.YAPI_TYPE_TIMESTAMP_LTZ:
+		// fix: 2016-01-02 15:04:05. -07:00 -> 2016-01-02 15:04:05 -07:00
+		rawStr = strings.ReplaceAll(rawStr, ". ", " ")
+		// fix: 2016-01-02 15:04:05. -> 2016-01-02 15:04:05
+		rawStr = strings.TrimRight(rawStr, ".")
+	}
+	return rawStr, nil
 }
 
 func PdbgGetBreakpointAttrs(stmt *YasStmt, id uint32, attr DebugBpAttr, value interface{}) error {
@@ -766,7 +915,7 @@ type PdbgVarAttr struct {
 	BlockNo      uint32
 	DataType     uint8
 	DataTypeName string
-	IsGlobal     bool
+	GlobalLevel  uint8
 	Name         string
 	Size         uint32
 	Value        string
@@ -790,7 +939,7 @@ func PdbgGetAllVarAttrs(stmt *YasStmt) ([]*PdbgVarAttr, error) {
 
 		data.DataTypeName = GetDatabaseTypeName(uint32(data.DataType))
 
-		if err := PdbgGetVarAttrs(stmt, i, DBG_VAR_ATTR_IS_GLOBAL, &data.IsGlobal); err != nil {
+		if err := PdbgGetVarAttrs(stmt, i, DBG_VAR_ATTR_IS_GLOBAL, &data.GlobalLevel); err != nil {
 			return nil, err
 		}
 

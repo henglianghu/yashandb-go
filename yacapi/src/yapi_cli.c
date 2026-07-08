@@ -906,6 +906,15 @@ YapiResult yapiCiPdbgGetBreakpointAttrs(YacHandle hStmt, uint32_t id, YapiDebugB
     YAPI_CHECK_CLI_RETURN();
 }
 
+YapiResult yapiCiPdbgGetOutput(YacHandle hStmt, char* buffer, uint32_t* len, bool* hasMore, YapiErrorMsg* error)
+{
+    YapiResult ret;
+
+    YAPI_LOAD_SYMBOL("yacPdbgGetOutput", yapiSymbols.fnPdbgGetOutput)
+    ret = (YapiResult)(*yapiSymbols.fnPdbgGetOutput)(hStmt, buffer, len, hasMore);
+    YAPI_CHECK_CLI_RETURN();
+}
+
 YapiResult yapiCliConnectionPoolCreate(YacHandle hConnPool, const char* url, int16_t urlLength,
                                        uint32_t min, uint32_t max, uint32_t increment, const char* user, int16_t userLength,
                                        const char* password, int16_t passwordLength, uint32_t mode, YapiErrorMsg* error)

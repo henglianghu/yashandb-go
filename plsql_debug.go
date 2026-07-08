@@ -31,6 +31,8 @@ type DebugVarAttr int8
 type DebugBpAttr int8
 type DebuggerStatus int8
 
+const PdbgOutputDefaultBufSize = 65534*2 + 1
+
 const (
 	DBG_RUNNING_ATTR_STATUS      DebugRunningAttr = 0
 	DBG_RUNNING_ATTR_OBJ_ID      DebugRunningAttr = 1
@@ -70,15 +72,15 @@ var (
 )
 
 type PlsqlDebug struct {
-	conn        *YasConn
-	Stmt        *YasStmt
-	enableStmt  *YasStmt
-	getLineStmt *YasStmt
-	ctx         context.Context
-
+	conn          *YasConn
+	Stmt          *YasStmt
+	enableStmt    *YasStmt
+	getLineStmt   *YasStmt
+	ctx           context.Context
 	config        *debugConfig
 	line          string
 	getLineStatus int32
+	outputBuf     *C.char
 }
 
 type debugConfig struct {
@@ -89,28 +91,28 @@ type debugConfig struct {
 	callArgs         []any
 }
 
-type debugConfigOpt func(*debugConfig)
+type DebugConfigOpt func(*debugConfig)
 
-func WithDebugCallTempalate(call string, args ...any) debugConfigOpt {
+func WithDebugCallTempalate(call string, args ...any) DebugConfigOpt {
 	return func(dc *debugConfig) {
 		dc.callTemplate = call
 		dc.callArgs = append(dc.callArgs, args...)
 	}
 }
 
-func WithDebugEnableOutput() debugConfigOpt {
+func WithDebugEnableOutput() DebugConfigOpt {
 	return func(dc *debugConfig) {
 		dc.enableOutput = true
 	}
 }
 
-func WithDebugOutputCacheSize(cacheSize uint32) debugConfigOpt {
+func WithDebugOutputCacheSize(cacheSize uint32) DebugConfigOpt {
 	return func(dc *debugConfig) {
 		dc.outputCacheSize = cacheSize
 	}
 }
 
-func WithDebugOutputMaxLineLen(maxLineLen uint32) debugConfigOpt {
+func WithDebugOutputMaxLineLen(maxLineLen uint32) DebugConfigOpt {
 	return func(dc *debugConfig) {
 		dc.outputMaxLineLen = maxLineLen
 	}
@@ -124,7 +126,9 @@ func defaultDebugConfig() *debugConfig {
 	}
 }
 
-func NewPlsqlDebug(dsn string, opts ...debugConfigOpt) (*PlsqlDebug, error) {
+// newPlsqlDebug 是核心初始化逻辑（私有），conn 由调用方提供。
+// 不在错误路径上关闭 conn —— 共享连接场景下调用方负责管理 conn 生命周期。
+func newPlsqlDebug(conn *YasConn, opts ...DebugConfigOpt) (*PlsqlDebug, error) {
 	config := defaultDebugConfig()
 	for _, opt := range opts {
 		opt(config)
@@ -132,9 +136,8 @@ func NewPlsqlDebug(dsn string, opts ...debugConfigOpt) (*PlsqlDebug, error) {
 	if err := validateDebugConfig(config); err != nil {
 		return nil, err
 	}
-	conn, err := GenYasconn(dsn)
-	if err != nil {
-		return nil, err
+	if conn == nil {
+		return nil, errors.New("conn must not be nil")
 	}
 	ctx := context.Background()
 	stmt, err := genPdbgStatement(ctx, conn, config.callTemplate, config.callArgs...)
@@ -149,11 +152,32 @@ func NewPlsqlDebug(dsn string, opts ...debugConfigOpt) (*PlsqlDebug, error) {
 	}
 	if config.enableOutput {
 		if err := initDebugOutputStmt(ctx, plsqlDebug); err != nil {
+			_ = stmt.Close()
 			return nil, err
 		}
 	}
 	return plsqlDebug, nil
+}
 
+// NewPlsqlDebug 创建新的连接并初始化 PlsqlDebug（原有签名不变）。
+func NewPlsqlDebug(dsn string, opts ...DebugConfigOpt) (*PlsqlDebug, error) {
+	conn, err := GenYasconn(dsn)
+	if err != nil {
+		return nil, err
+	}
+	p, err := newPlsqlDebug(conn, opts...)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return p, nil
+}
+
+// NewPlsqlDebugWithConn 复用已有连接创建 PlsqlDebug。
+// 调用方持有 conn 的所有权 — Close() 会关闭 conn；
+// 用 CloseWithoutConn() 释放 PDBG 资源但保留共享连接。
+func NewPlsqlDebugWithConn(conn *YasConn, opts ...DebugConfigOpt) (*PlsqlDebug, error) {
+	return newPlsqlDebug(conn, opts...)
 }
 
 func validateDebugConfig(config *debugConfig) error {
@@ -251,23 +275,61 @@ func (p *PlsqlDebug) GetAllFrameAttrs() ([]*PdbgFrameData, error) {
 	return PdbgGetAllFrameAttrs(p.Stmt)
 }
 
-func (p *PlsqlDebug) Close() error {
-
+// closeStmtsAndOutputBuf 释放输出缓冲和所有 PDBG 语句（私有）。
+func (p *PlsqlDebug) closeStmtsAndOutputBuf() {
+	if p.outputBuf != nil {
+		C.free(unsafe.Pointer(p.outputBuf))
+		p.outputBuf = nil
+	}
 	stmts := []*YasStmt{p.Stmt}
 	if p.config.enableOutput {
-		stmts = append(stmts, p.enableStmt)
-		stmts = append(stmts, p.getLineStmt)
+		stmts = append(stmts, p.enableStmt, p.getLineStmt)
 	}
 	for _, stmt := range stmts {
-		if err := PdbgStatementClose(stmt); err != nil {
-			return nil
+		if stmt != nil {
+			_ = PdbgStatementClose(stmt)
 		}
 	}
+}
+
+// Close 关闭所有语句并关闭底层连接（原有签名不变）。
+func (p *PlsqlDebug) Close() error {
+	p.closeStmtsAndOutputBuf()
 	return p.conn.Close()
+}
+
+// CloseWithoutConn 关闭所有语句但保留底层连接。
+// 用于共享连接场景：释放 PDBG 资源但不关闭 YasConn。
+func (p *PlsqlDebug) CloseWithoutConn() error {
+	p.closeStmtsAndOutputBuf()
+	return nil
 }
 
 func (p *PlsqlDebug) GetBindOutValue() error {
 	return PbdgGetBindOutValue(p.Stmt)
+}
+
+func (p *PlsqlDebug) PdbgGetOutput() (string, error) {
+	if p.outputBuf == nil {
+		p.outputBuf = (*C.char)(mallocBytes(PdbgOutputDefaultBufSize))
+	}
+
+	var sb strings.Builder
+	for {
+		length := C.uint32_t(PdbgOutputDefaultBufSize)
+		var hasMore C.bool
+		err := yapiPdbgGetOutput(p.Stmt.Stmt, p.outputBuf, &length, &hasMore)
+		if err != nil {
+			return sb.String(), err
+		}
+		if length > 0 {
+			sb.WriteString(C.GoStringN(p.outputBuf, C.int(length)))
+		}
+		if !hasMore {
+			break
+		}
+	}
+	return sb.String(), nil
 }
 
 func (p *PlsqlDebug) GetOutput() ([]string, error) {
@@ -781,10 +843,7 @@ func PdbgGetVarValue(stmt *YasStmt, id uint32) (string, error) {
 
 	switch actualType {
 	case C.YAPI_TYPE_DATE, C.YAPI_TYPE_SHORTDATE, C.YAPI_TYPE_SHORTTIME, C.YAPI_TYPE_TIMESTAMP, C.YAPI_TYPE_TIMESTAMP_TZ, C.YAPI_TYPE_TIMESTAMP_LTZ:
-		// fix: 2016-01-02 15:04:05. -07:00 -> 2016-01-02 15:04:05 -07:00
-		rawStr = strings.ReplaceAll(rawStr, ". ", " ")
-		// fix: 2016-01-02 15:04:05. -> 2016-01-02 15:04:05
-		rawStr = strings.TrimRight(rawStr, ".")
+		rawStr = fixTimeString(rawStr)
 	}
 	return rawStr, nil
 }

@@ -174,6 +174,7 @@ typedef YacResult (*yapiFuncPdbgGetVarValue)(YacHandle hStmt, uint32_t id, uint3
                                              int32_t bufLen, int32_t* indicator);
 typedef YacResult (*yapiFuncPdbgGetBreakpointAttrs)(YacHandle hStmt, uint32_t id, YapiDebugBpAttr attr, void* value,
                                                     int32_t bufLen, int32_t* stringLength);
+typedef YacResult (*yapiFuncPdbgGetOutput)(YacHandle hStmt, char* buffer, uint32_t* len, bool* hasMore);
 
 typedef YacResult (*yapiFuncConnectionPoolCreate)(YacHandle hConnPool, const char* url, int16_t urlLength,
                                                   uint32_t min, uint32_t max, uint32_t increment, const char* user, int16_t userLength,
@@ -284,6 +285,7 @@ typedef struct StYapiSymbols {
     yapiFuncPdbgGetVarValue        fnPdbgGetVarValue;
     yapiFuncPdbgGetVarAttrs        fnPdbgGetVarAttrs;
     yapiFuncPdbgGetBreakpointAttrs fnPdbgGetBreakpointAttrs;
+    yapiFuncPdbgGetOutput          fnPdbgGetOutput;
 
     yapiFuncConnectionPoolCreate   fnConnectionPoolCreate;
     yapiFuncConnectionGet          fnConnectionGet;
@@ -483,6 +485,7 @@ YapiResult yapiCiPdbgGetVarAttrs(YacHandle hStmt, uint32_t id, uint32_t valueTyp
                                  int32_t* indicator, YapiErrorMsg* error);
 YapiResult yapiCiPdbgGetBreakpointAttrs(YacHandle hStmt, uint32_t id, YapiDebugBpAttr attr, void* value, int32_t bufLen,
                                         int32_t* stringLength, YapiErrorMsg* error);
+YapiResult yapiCiPdbgGetOutput(YacHandle hStmt, char* buffer, uint32_t* len, bool* hasMore, YapiErrorMsg* error);
 
 YapiResult yapiCliConnectionPoolCreate(YacHandle hConnPool, const char* url, int16_t urlLength,
                                        uint32_t min, uint32_t max, uint32_t increment, const char* user, int16_t userLength,

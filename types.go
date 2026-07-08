@@ -526,6 +526,15 @@ func yapiPdbgGetBreakpointAttrs(stmt *C.YapiStmt, id C.uint32_t, attr C.YapiDebu
 	return checkYasError(C.yapiPdbgGetBreakpointAttrs(stmt, C.uint32_t(id), attr, point, len, stringLen))
 }
 
+func yapiPdbgGetOutput(stmt *C.YapiStmt, buffer *C.char, length *C.uint32_t, hasMore *C.bool) error {
+	if stmt == nil {
+		return ErrStmtNoOpen()
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return checkYasError(C.yapiPdbgGetOutput(stmt, buffer, length, hasMore))
+}
+
 func yapiFetch(stmt *C.YapiStmt, rows *C.uint32_t) error {
 	if stmt == nil {
 		return ErrStmtNoOpen()

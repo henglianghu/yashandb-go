@@ -610,6 +610,7 @@ YapiResult yapiPdbgGetVarValue(YapiStmt* hStmt, uint32_t id, uint32_t valueType,
                                int32_t* indicator);
 YapiResult yapiPdbgGetBreakpointAttrs(YapiStmt* hStmt, uint32_t id, YapiDebugBpAttr attr, YapiPointer value,
                                       int32_t bufLen, int32_t* stringLength);
+YapiResult yapiPdbgGetOutput(YapiStmt* hStmt, char* buffer, uint32_t* len, bool* hasMore);
 
 #ifdef __cplusplus
 }

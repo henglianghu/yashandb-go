@@ -279,7 +279,7 @@ func (r *YasRows) getValues() (*[]driver.Value, error) {
 			}
 			value = *t
 		case C.YAPI_TYPE_TIMESTAMP_TZ:
-			valueStr := (C.GoString((*C.char)(row.Data)))
+			valueStr := fixTimeString(C.GoString((*C.char)(row.Data)))
 			t, err := time.Parse(DateTimeFormats[DateTimeMicroZone], valueStr)
 			if err != nil {
 				return nil, fmt.Errorf("convert %q to time.Time failed, %v", valueStr, err)

@@ -703,3 +703,11 @@ func getMallocSize(actual, want int) C.int32_t {
 	}
 	return C.int32_t(actual)
 }
+
+func fixTimeString(s string) string {
+	// fix: 2016-01-02 15:04:05. -07:00 -> 2016-01-02 15:04:05 -07:00
+	s = strings.ReplaceAll(s, ". ", " ")
+	// fix: 2016-01-02 15:04:05. -> 2016-01-02 15:04:05
+	s = strings.TrimRight(s, ".")
+	return s
+}

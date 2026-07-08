@@ -131,3 +131,10 @@ YapiResult yapiPdbgGetBreakpointAttrs(YapiStmt* hStmt, uint32_t id, YapiDebugBpA
     yapiInitError(&error);
     return yapiCiPdbgGetBreakpointAttrs(hStmt->stmtHandler, id, attr, value, bufLen, stringLength, &error);
 }
+
+YapiResult yapiPdbgGetOutput(YapiStmt* hStmt, char* buffer, uint32_t* len, bool* hasMore)
+{
+    YapiErrorMsg error;
+    yapiInitError(&error);
+    return yapiCiPdbgGetOutput(hStmt->stmtHandler, buffer, len, hasMore, &error);
+}

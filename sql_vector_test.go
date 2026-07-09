@@ -2,6 +2,7 @@ package yasdb
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"testing"
 )
@@ -971,4 +972,132 @@ func testVectorBatchPointerSliceInsert(t *sqlTest) {
 	}
 
 	t.Log("[]*Vector batch pointer slice insert test passed")
+}
+
+// TestVectorValue_Contract 验证 Value() 是否符合 driver.Valuer 约定。
+func TestVectorValue_Contract(t *testing.T) {
+	t.Parallel()
+
+	vec := Vector{Data: []float32{1, 2, 3}, Dim: 3, Format: VectorFormatFloat32}
+
+	nilVec := Vector{}
+	val, err := nilVec.Value()
+	if err != nil {
+		t.Fatalf("nil Data Value() error: %v", err)
+	}
+	if val != nil {
+		t.Fatalf("nil Data Value() want nil, got %T %v", val, val)
+	}
+
+	val, err = vec.Value()
+	if err != nil {
+		t.Fatalf("Value() error: %v", err)
+	}
+	if !driver.IsValue(val) {
+		t.Fatalf("Value() returns %T, which is NOT a valid driver.Value", val)
+	}
+	if val != vec.String() {
+		t.Fatalf("Value() want %q, got %v", vec.String(), val)
+	}
+}
+
+// TestVectorValue_RecursiveValuer 模拟上层对 Valuer 的递归格式化（如 GORM 日志）。
+func TestVectorValue_RecursiveValuer(t *testing.T) {
+	t.Parallel()
+
+	vec := Vector{Data: []float32{1, 2, 3}, Dim: 3, Format: VectorFormatFloat32}
+
+	const maxDepth = 100
+	var callValue func(v interface{}, depth int) (interface{}, error)
+	callValue = func(v interface{}, depth int) (interface{}, error) {
+		if depth > maxDepth {
+			return nil, fmt.Errorf("recursive Valuer call exceeded depth %d", maxDepth)
+		}
+		vr, ok := v.(driver.Valuer)
+		if !ok {
+			return v, nil
+		}
+		out, err := vr.Value()
+		if err != nil {
+			return nil, err
+		}
+		return callValue(out, depth+1)
+	}
+
+	out, err := callValue(vec, 0)
+	if err != nil {
+		t.Fatalf("recursive Valuer formatting should not fail: %v", err)
+	}
+	if out != vec.String() {
+		t.Fatalf("recursive Valuer formatting want %q, got %v", vec.String(), out)
+	}
+}
+
+// TestVectorValue_StringVsValue 对比 String() 与 Value() 的返回值类型。
+func TestVectorValue_StringVsValue(t *testing.T) {
+	t.Parallel()
+
+	vec := Vector{Data: []float32{1, 2, 3}, Dim: 3, Format: VectorFormatFloat32}
+	val, err := vec.Value()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	str, ok := val.(string)
+	if !ok {
+		t.Fatalf("Value() should return string, got %T", val)
+	}
+	if str != vec.String() {
+		t.Fatalf("Value() want %q, String() %q", str, vec.String())
+	}
+}
+
+// TestVectorValue_DirectBind 验证 Vector 参数绑定走 CheckNamedValue 专用路径。
+func TestVectorValue_DirectBind(t *testing.T) {
+	t.Parallel()
+	runSqlTest(t, testVectorValueDirectBind)
+}
+
+func testVectorValueDirectBind(t *sqlTest) {
+	t.Exec("DROP TABLE IF EXISTS test_vector_value_bind")
+	defer t.Exec("DROP TABLE IF EXISTS test_vector_value_bind")
+
+	_, err := t.DB.Exec("CREATE TABLE test_vector_value_bind (id INT, vec VECTOR(3, FLOAT32))")
+	if err != nil {
+		t.fatalVectorTest("表创建失败")
+		return
+	}
+
+	vec := Vector{Data: []float32{1, 2, 3}, Dim: 3, Format: VectorFormatFloat32}
+
+	_, err = t.DB.Exec("INSERT INTO test_vector_value_bind VALUES (?, ?)", 1, vec)
+	if err != nil {
+		t.Fatalf("direct Vector bind should work: %v", err)
+	}
+
+	val, err := vec.Value()
+	if err != nil {
+		t.Fatalf("Value() error: %v", err)
+	}
+	str, ok := val.(string)
+	if !ok || str != vec.String() {
+		t.Fatalf("Value() should return string %q for display, got %T %v", vec.String(), val, val)
+	}
+
+	var got Vector
+	err = t.DB.QueryRow("SELECT vec FROM test_vector_value_bind WHERE id = 1").Scan(&got)
+	if err != nil {
+		t.Fatalf("query vector error: %v", err)
+	}
+
+	expected := vec.Data.([]float32)
+	gotData, ok := got.Data.([]float32)
+	if !ok {
+		t.Fatalf("scan got unexpected type %T", got.Data)
+	}
+	for i := range expected {
+		if gotData[i] != expected[i] {
+			t.Fatalf("data mismatch at %d: want %f got %f", i, expected[i], gotData[i])
+		}
+	}
 }

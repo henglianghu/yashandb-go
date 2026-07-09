@@ -29,13 +29,15 @@ type Vector struct {
 	Format VectorFormat // 格式类型
 }
 
-// Value 实现 driver.Valuer 接口，支持将 Vector 作为参数绑定
-// 返回 Vector 自身，由 CheckNamedValue 识别后走直接绑定路径
+// Value 实现 driver.Valuer 接口。
+// 返回 Vector 的字符串表示，供 gorm 等上层 ORM 做日志格式化。
+// 实际的参数绑定由 YasStmt.CheckNamedValue 直接识别 Vector 类型走专用路径，
+// 不依赖 Value() 的返回值。注意：不能返回 v 自身，否则 gorm logger 会无限递归。
 func (v Vector) Value() (driver.Value, error) {
 	if v.Data == nil {
-		return nil, nil // nil is valid
+		return nil, nil
 	}
-	return v, nil
+	return v.String(), nil
 }
 
 // String 返回 Vector 的字符串表示

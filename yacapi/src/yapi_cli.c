@@ -1,7 +1,6 @@
 #include "yapi_inc.h"
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -38,46 +37,6 @@
 static YapiSymbols yapiSymbols = {NULL};
 static void*       yapiLibHandle = NULL;
 
-#define YAPI_MAX_SEARCH_PATHS 64
-#define YAPI_CLIENT_HOME_ENV_YASHANDB "YASHANDB_CLIENT_HOME"
-#define YAPI_CLIENT_HOME_ENV_YASDB "YASDB_CLIENT_HOME"
-
-static void yapiTrimTrailingSlash(char* path)
-{
-    size_t len;
-    if (path == NULL) {
-        return;
-    }
-    len = strlen(path);
-    while (len > 0 && (path[len - 1] == '/' || path[len - 1] == '\\')) {
-        path[len - 1] = '\0';
-        len--;
-    }
-}
-
-static int yapiAddUniqueSearchPath(char paths[][FILENAME_MAX], int* pathCount, const char* path)
-{
-    int i;
-    char normalized[FILENAME_MAX];
-
-    if (path == NULL || path[0] == '\0' || *pathCount >= YAPI_MAX_SEARCH_PATHS) {
-        return 0;
-    }
-    snprintf(normalized, sizeof(normalized), "%s", path);
-    yapiTrimTrailingSlash(normalized);
-    if (normalized[0] == '\0') {
-        return 0;
-    }
-    for (i = 0; i < *pathCount; i++) {
-        if (strcmp(paths[i], normalized) == 0) {
-            return 0;
-        }
-    }
-    snprintf(paths[*pathCount], FILENAME_MAX, "%s", normalized);
-    (*pathCount)++;
-    return 1;
-}
-
 #ifdef _WIN32
 
 static YapiResult yapiGetWindowsError(DWORD errNum, YapiErrorMsg* error, char* errMsgPrefix)
@@ -111,108 +70,38 @@ static YapiResult yapiGetWindowsError(DWORD errNum, YapiErrorMsg* error, char* e
     return YAPI_SUCCESS;
 }
 
-static void yapiAppendPathsFromPathEnv(char paths[][FILENAME_MAX], int* pathCount, const char* envName)
-{
-    char* envValue;
-    char* cursor;
-    char  buf[FILENAME_MAX * YAPI_MAX_SEARCH_PATHS];
-
-    envValue = getenv(envName);
-    if (envValue == NULL || envValue[0] == '\0') {
-        return;
-    }
-    snprintf(buf, sizeof(buf), "%s", envValue);
-    cursor = buf;
-    while (*cursor != '\0') {
-        char* next = strchr(cursor, ';');
-        if (next != NULL) {
-            *next = '\0';
-        }
-        yapiAddUniqueSearchPath(paths, pathCount, cursor);
-        if (next == NULL) {
-            break;
-        }
-        cursor = next + 1;
-    }
-}
-
-static void yapiCollectClientSearchPaths(char paths[][FILENAME_MAX], int* pathCount)
-{
-    char* envValue;
-    char  homeLibPath[FILENAME_MAX];
-
-    *pathCount = 0;
-    yapiAddUniqueSearchPath(paths, pathCount, getenv(YAPI_CLIENT_HOME_ENV_YASHANDB));
-    yapiAddUniqueSearchPath(paths, pathCount, getenv(YAPI_CLIENT_HOME_ENV_YASDB));
-    yapiAppendPathsFromPathEnv(paths, pathCount, "PATH");
-
-    envValue = getenv("USERPROFILE");
-    if (envValue != NULL && envValue[0] != '\0') {
-        snprintf(homeLibPath, sizeof(homeLibPath), "%s\\.yashandb\\client\\lib", envValue);
-        yapiAddUniqueSearchPath(paths, pathCount, homeLibPath);
-    }
-}
-
-static YapiResult yapiTryLoadClientFromBasePath(const char* basePath, const char* mainLibName, YapiPointer* handler)
-{
-    const char* depNames[] = {"libssl-1_1-x64.dll", "libcrypto-1_1-x64.dll", "yas_infra.dll"};
-    HMODULE     loaded[3];
-    int         loadedCount = 0;
-    char        libPath[FILENAME_MAX];
-    int         i;
-    HMODULE     mainHandle;
-
-    for (i = 0; i < 3; i++) {
-        snprintf(libPath, sizeof(libPath), "%s\\%s", basePath, depNames[i]);
-        loaded[i] = LoadLibraryA(libPath);
-        if (loaded[i] == NULL) {
-            while (loadedCount > 0) {
-                loadedCount--;
-                FreeLibrary(loaded[loadedCount]);
-            }
-            return YAPI_ERROR;
-        }
-        loadedCount++;
-    }
-
-    snprintf(libPath, sizeof(libPath), "%s\\%s", basePath, mainLibName);
-    mainHandle = LoadLibraryA(libPath);
-    if (mainHandle == NULL) {
-        while (loadedCount > 0) {
-            loadedCount--;
-            FreeLibrary(loaded[loadedCount]);
-        }
-        return YAPI_ERROR;
-    }
-
-    *handler = mainHandle;
-    yapiLibHandle = mainHandle;
-    return YAPI_SUCCESS;
-}
-
 YapiResult yapiOpenDynamicLib(char* yacliLibName, YapiPointer* handler, YapiErrorMsg* error)
 {
-    char        searchPaths[YAPI_MAX_SEARCH_PATHS][FILENAME_MAX];
-    int         pathCount = 0;
-    int         i;
-
-    yapiCollectClientSearchPaths(searchPaths, &pathCount);
-    for (i = 0; i < pathCount; i++) {
-        if (yapiTryLoadClientFromBasePath(searchPaths[i], yacliLibName, handler) == YAPI_SUCCESS) {
-            return YAPI_SUCCESS;
-        }
-    }
-
     *handler = LoadLibraryA(yacliLibName);
     if (*handler != NULL) {
         yapiLibHandle = *handler;
         return YAPI_SUCCESS;
     }
 
+    char* userProfile = getenv("USERPROFILE");
+    if (userProfile != NULL) {
+        char basePath[FILENAME_MAX];
+        snprintf(basePath, sizeof(basePath), "%s\\.yashandb\\client\\lib", userProfile);
+        char thirdPath[FILENAME_MAX];
+        snprintf(thirdPath, sizeof(thirdPath), "%s\\libssl-1_1-x64.dll", basePath);
+        (void)LoadLibraryA(thirdPath);
+        snprintf(thirdPath, sizeof(thirdPath), "%s\\libcrypto-1_1-x64.dll", basePath);
+        (void)LoadLibraryA(thirdPath);
+        snprintf(thirdPath, sizeof(thirdPath), "%s\\yas_infra.dll", basePath);
+        (void)LoadLibraryA(thirdPath);
+        snprintf(thirdPath, sizeof(thirdPath), "%s\\%s", basePath, yacliLibName);
+        *handler = LoadLibraryA(thirdPath);
+        if (*handler != NULL) {
+            yapiLibHandle = *handler;
+            return YAPI_SUCCESS;
+        }
+    }
+
     DWORD errNum = GetLastError();
     YAPI_CALL(yapiGetWindowsError(errNum, error, "load yacli library error: "));
     return YAPI_ERROR;
 }
+
 
 YapiResult yapiCloseDynamicLib(YapiPointer* handler, YapiErrorMsg* error)
 {
@@ -238,106 +127,36 @@ static int yapiLoadSymbol(const char* symbolName, void** symbol, YapiErrorMsg* e
 
 #else
 
-static void yapiAppendPathsFromPathEnv(char paths[][FILENAME_MAX], int* pathCount, const char* envName)
-{
-    char* envValue;
-    char* cursor;
-    char  buf[FILENAME_MAX * YAPI_MAX_SEARCH_PATHS];
-
-    envValue = getenv(envName);
-    if (envValue == NULL || envValue[0] == '\0') {
-        return;
-    }
-    snprintf(buf, sizeof(buf), "%s", envValue);
-    cursor = buf;
-    while (*cursor != '\0') {
-        char* next = strchr(cursor, ':');
-        if (next != NULL) {
-            *next = '\0';
-        }
-        yapiAddUniqueSearchPath(paths, pathCount, cursor);
-        if (next == NULL) {
-            break;
-        }
-        cursor = next + 1;
-    }
-}
-
-static void yapiCollectClientSearchPaths(char paths[][FILENAME_MAX], int* pathCount)
-{
-    char* envValue;
-    char  homeLibPath[FILENAME_MAX];
-
-    *pathCount = 0;
-    yapiAddUniqueSearchPath(paths, pathCount, getenv(YAPI_CLIENT_HOME_ENV_YASHANDB));
-    yapiAddUniqueSearchPath(paths, pathCount, getenv(YAPI_CLIENT_HOME_ENV_YASDB));
-    yapiAppendPathsFromPathEnv(paths, pathCount, "LD_LIBRARY_PATH");
-
-    envValue = getenv("HOME");
-    if (envValue != NULL && envValue[0] != '\0') {
-        snprintf(homeLibPath, sizeof(homeLibPath), "%s/.yashandb/client/lib", envValue);
-        yapiAddUniqueSearchPath(paths, pathCount, homeLibPath);
-    }
-}
-
-static YapiResult yapiTryLoadClientFromBasePath(const char* basePath, const char* mainLibName, YapiPointer* handler)
-{
-    const char* depNames[] = {"libcrypto.so", "libssl.so", "libyas_infra.so"};
-    void*       loaded[3];
-    int         loadedCount = 0;
-    char        libPath[FILENAME_MAX];
-    int         i;
-    void*       mainHandle;
-
-    for (i = 0; i < 3; i++) {
-        snprintf(libPath, sizeof(libPath), "%s/%s", basePath, depNames[i]);
-        loaded[i] = dlopen(libPath, RTLD_LAZY | RTLD_LOCAL);
-        if (loaded[i] == NULL) {
-            while (loadedCount > 0) {
-                loadedCount--;
-                dlclose(loaded[loadedCount]);
-            }
-            return YAPI_ERROR;
-        }
-        loadedCount++;
-    }
-
-    snprintf(libPath, sizeof(libPath), "%s/%s", basePath, mainLibName);
-    mainHandle = dlopen(libPath, RTLD_LAZY | RTLD_LOCAL);
-    if (mainHandle == NULL) {
-        while (loadedCount > 0) {
-            loadedCount--;
-            dlclose(loaded[loadedCount]);
-        }
-        return YAPI_ERROR;
-    }
-
-    *handler = mainHandle;
-    yapiLibHandle = mainHandle;
-    return YAPI_SUCCESS;
-}
-
 YapiResult yapiOpenDynamicLib(char* libName, YapiPointer* handler, YapiErrorMsg* error)
 {
-    char searchPaths[YAPI_MAX_SEARCH_PATHS][FILENAME_MAX];
-    int  pathCount = 0;
-    int  i;
+    *handler = dlopen(libName, RTLD_LAZY);
+    if (*handler) {
+        yapiLibHandle = *handler;
+        return YAPI_SUCCESS;
+    }
 
-    yapiCollectClientSearchPaths(searchPaths, &pathCount);
-    for (i = 0; i < pathCount; i++) {
-        if (yapiTryLoadClientFromBasePath(searchPaths[i], libName, handler) == YAPI_SUCCESS) {
+    char* homeDir = getenv("HOME");
+    if (homeDir != NULL) {
+        char basePath[FILENAME_MAX];
+        snprintf(basePath, sizeof(basePath), "%s/.yashandb/client/lib/", homeDir);
+        char thirdPath[FILENAME_MAX];
+        snprintf(thirdPath, sizeof(thirdPath), "%s/libcrypto.so", basePath);
+        dlopen(thirdPath, RTLD_LAZY);
+        snprintf(thirdPath, sizeof(thirdPath), "%s/libssl.so", basePath);
+        dlopen(thirdPath, RTLD_LAZY);
+        snprintf(thirdPath, sizeof(thirdPath), "%s/libyas_infra.so", basePath);
+        dlopen(thirdPath, RTLD_LAZY);
+        snprintf(thirdPath, sizeof(thirdPath), "%s/%s", basePath, libName);
+        *handler = dlopen(thirdPath, RTLD_LAZY);
+        if (*handler) {
+            yapiLibHandle = *handler;
             return YAPI_SUCCESS;
         }
     }
 
-    *handler = dlopen(libName, RTLD_LAZY);
-    if (!*handler) {
-        char* errMsg = dlerror();
-        yapiSetError(error, YAPI_ERR_LOAD_SYMBOL, "load yacli library error [%s]", errMsg);
-        return YAPI_ERROR;
-    }
-    yapiLibHandle = *handler;
-    return YAPI_SUCCESS;
+    char* errMsg = dlerror();
+    yapiSetError(error, YAPI_ERR_LOAD_SYMBOL, "load yacli library error [%s]", errMsg);
+    return YAPI_ERROR;
 }
 
 YapiResult yapiCloseDynamicLib(YapiPointer* handler, YapiErrorMsg* error)

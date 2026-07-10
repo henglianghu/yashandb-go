@@ -16,7 +16,6 @@ extern "C" {
     } while (0)
 
 typedef enum EnYacResult { YAC_SUCCESS = 0, YAC_SUCCESS_WITH_INFO = 1, YAC_ERROR = -1 } YacResult;
-typedef void* YacHandle;
 
 typedef YacResult (*yapiFuncAllocHandle)(YapiHandleType type, YacHandle input, YacHandle* output);
 typedef YacResult (*yapiFuncFreeHandler)(YapiHandleType type, YacHandle handle);
@@ -91,7 +90,7 @@ typedef YacResult (*yapiFuncLobFreeTemporary)(YacHandle hConn, YapiLobLocator* l
 
 // vector API
 typedef YacResult (*yapiFuncDescAlloc2)(YacHandle hEnv, void** desc, YapiDescType type);
-typedef YacResult (*yapiFuncDescFree2)(YacHandle hEnv, void** desc, YapiDescType type);
+typedef YacResult (*yapiFuncDescFree2)(YacHandle hEnv, void* desc, YapiDescType type);
 typedef YacResult (*yapiFuncVectorFromText)(YapiVector* vector, YapiVectorFormat format, uint16_t dim, char* text, uint32_t textlen, uint32_t mode);
 typedef YacResult (*yapiFuncVectorFromArray)(YapiVector* vector, YapiVectorFormat format, uint16_t dim, uint8_t* array, uint32_t arrayLen, uint32_t mode);
 typedef YacResult (*yapiFuncVectorToText)(YapiVector* vector, char* text, uint32_t* textlen, uint32_t mode);
@@ -175,6 +174,7 @@ typedef YacResult (*yapiFuncPdbgGetVarValue)(YacHandle hStmt, uint32_t id, uint3
                                              int32_t bufLen, int32_t* indicator);
 typedef YacResult (*yapiFuncPdbgGetBreakpointAttrs)(YacHandle hStmt, uint32_t id, YapiDebugBpAttr attr, void* value,
                                                     int32_t bufLen, int32_t* stringLength);
+typedef YacResult (*yapiFuncPdbgGetOutput)(YacHandle hStmt, char* buffer, uint32_t* len, bool* hasMore);
 
 typedef YacResult (*yapiFuncConnectionPoolCreate)(YacHandle hConnPool, const char* url, int16_t urlLength,
                                                   uint32_t min, uint32_t max, uint32_t increment, const char* user, int16_t userLength,
@@ -285,6 +285,7 @@ typedef struct StYapiSymbols {
     yapiFuncPdbgGetVarValue        fnPdbgGetVarValue;
     yapiFuncPdbgGetVarAttrs        fnPdbgGetVarAttrs;
     yapiFuncPdbgGetBreakpointAttrs fnPdbgGetBreakpointAttrs;
+    yapiFuncPdbgGetOutput          fnPdbgGetOutput;
 
     yapiFuncConnectionPoolCreate   fnConnectionPoolCreate;
     yapiFuncConnectionGet          fnConnectionGet;
@@ -484,6 +485,7 @@ YapiResult yapiCiPdbgGetVarAttrs(YacHandle hStmt, uint32_t id, uint32_t valueTyp
                                  int32_t* indicator, YapiErrorMsg* error);
 YapiResult yapiCiPdbgGetBreakpointAttrs(YacHandle hStmt, uint32_t id, YapiDebugBpAttr attr, void* value, int32_t bufLen,
                                         int32_t* stringLength, YapiErrorMsg* error);
+YapiResult yapiCiPdbgGetOutput(YacHandle hStmt, char* buffer, uint32_t* len, bool* hasMore, YapiErrorMsg* error);
 
 YapiResult yapiCliConnectionPoolCreate(YacHandle hConnPool, const char* url, int16_t urlLength,
                                        uint32_t min, uint32_t max, uint32_t increment, const char* user, int16_t userLength,
@@ -493,7 +495,7 @@ YapiResult yapiCliConnectionGiveBack(YacHandle hConn, YapiErrorMsg* error);
 YapiResult yapiCliConnectionPoolDestroy(YacHandle hConnPool, uint32_t mode, YapiErrorMsg* error);
 
 YapiResult yapiCliDescAlloc2(YacHandle hEnv, void** desc, YapiDescType type, YapiErrorMsg* error);
-YapiResult yapiCliDescFree2(YacHandle hEnv, void** desc, YapiDescType type, YapiErrorMsg* error);
+YapiResult yapiCliDescFree2(YacHandle hEnv, void* desc, YapiDescType type, YapiErrorMsg* error);
 YapiResult yapiCliVectorFromText(YapiVector* vector, YapiVectorFormat format, uint16_t dim, char* text, uint32_t textlen, uint32_t mode, YapiErrorMsg* error);
 YapiResult yapiCliVectorFromArray(YapiVector* vector, YapiVectorFormat format, uint16_t dim, uint8_t* array, uint32_t arrayLen, uint32_t mode, YapiErrorMsg* error);
 YapiResult yapiCliVectorToText(YapiVector* vector, char* text, uint32_t* textlen, uint32_t mode, YapiErrorMsg* error);

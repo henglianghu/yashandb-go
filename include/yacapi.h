@@ -26,9 +26,10 @@ typedef int32_t YapiYMInterval;
 typedef int64_t YapiDSInterval;
 typedef void*   YapiPointer;
 
-typedef struct StYapiConnect     YapiConnect;
-typedef struct StYapiStmt        YapiStmt;
-typedef struct StYapiEnv         YapiEnv;
+typedef struct StYapiConnect YapiConnect;
+typedef struct StYapiStmt    YapiStmt;
+typedef struct StYapiEnv     YapiEnv;
+typedef void* YacHandle;
 typedef struct StYapiConnectPool YapiConnectPool;
 
 #pragma pack(4)
@@ -96,6 +97,7 @@ typedef enum EnYapiType {
     YAPI_TYPE_JSON = 35,
     YAPI_TYPE_XML = 39,
     YAPI_TYPE_NUMBER_FLOAT = 40,
+    YAPI_TYPE_BFILE = 41,
     YAPI_TYPE_VECTOR = 42,
     __YAPI_TYPES_COUNT__
 } YapiType;
@@ -231,7 +233,10 @@ typedef enum EnYapiConnAttr {
     YAPI_ATTR_TAF_CALLBACK = 15,
     YAPI_ATTR_MAX_NCHARSET_RATIO = 17,
     YAPI_ATTR_HEARTBEAT_ENABLED = 18,
+    YAPI_ATTR_SET_COMPAT_VECTOR = 21,
     YAPI_ATTR_SERVER_STATUS = 22,
+    YAPI_ATTR_ROLE = 23,
+    YAPI_ATTR_SSL_ROOT_CER = 24,
     __YAPI_CONN_ATTR_END__
 } YapiConnAttr;
 
@@ -455,8 +460,7 @@ YapiResult yapiGetConnAttr(YapiConnect* hConn, YapiConnAttr attr, void* value, i
                            int32_t* stringLength);
 YapiResult yapiAllocConnect(YapiEnv* env, YapiConnect** hConn);
 YapiResult yapiConnect2(YapiConnect* hConn, const char* url, int16_t urlLength, const char* user, int16_t userLength,
-                       const char* password, int16_t passwordLength);
-
+                        const char* password, int16_t passwordLengt);
 YapiResult yapiAllocConnectionPool(YapiEnv* env, YapiConnectPool** hConnPool);
 YapiResult yapiReleaseConnectionPool(YapiConnectPool* hConnPool);
 YapiResult yapiConnectionPoolCreate(YapiConnectPool* hConnPool, const char* url, int16_t urlLength,
@@ -466,7 +470,7 @@ YapiResult yapiConnectionGet(YapiConnectPool* hConnPool, YapiConnect** hConn);
 YapiResult yapiConnectionGiveBack(YapiConnect* hConn);
 YapiResult yapiConnectionPoolDestroy(YapiConnectPool* hConnPool, uint32_t mode);
 YapiResult yapiDescAlloc2(YapiEnv* hEnv, void** desc, YapiDescType type);
-YapiResult yapiDescFree2(YapiEnv* hEnv, void** desc, YapiDescType type);
+YapiResult yapiDescFree2(YapiEnv* hEnv, void* desc, YapiDescType type);
 YapiResult yapiPing(YapiConnect* hConn, int32_t timeout);
 
 //-----------------------------------------------------------------------------
@@ -501,6 +505,9 @@ YapiResult yapiColAttribute(YapiStmt* hStmt, uint16_t id, YapiColAttr attr, void
                             int32_t* stringLength);
 YapiResult yapiNumParams(YapiStmt* hStmt, int16_t* count);
 YapiResult yapiReleaseStmt(YapiStmt* hStmt);
+YapiResult yapiReleaseHandle(YacHandle* handle);
+YapiResult yapiCursorStmtCreate(YapiConnect* hConn, YapiStmt** hStmt, YacHandle* handle);
+YapiResult yapiReleaseCursorStmt(YapiStmt* hStmt);
 
 //-----------------------------------------------------------------------------
 // Data Function
@@ -603,6 +610,7 @@ YapiResult yapiPdbgGetVarValue(YapiStmt* hStmt, uint32_t id, uint32_t valueType,
                                int32_t* indicator);
 YapiResult yapiPdbgGetBreakpointAttrs(YapiStmt* hStmt, uint32_t id, YapiDebugBpAttr attr, YapiPointer value,
                                       int32_t bufLen, int32_t* stringLength);
+YapiResult yapiPdbgGetOutput(YapiStmt* hStmt, char* buffer, uint32_t* len, bool* hasMore);
 
 #ifdef __cplusplus
 }

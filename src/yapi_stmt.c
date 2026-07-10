@@ -19,6 +19,24 @@ YapiResult yapiStmtCreate(YapiConnect* hConn, YapiStmt** hStmt)
     return YAPI_SUCCESS;
 }
 
+YapiResult yapiCursorStmtCreate(YapiConnect* hConn, YapiStmt** hStmt, YacHandle *handle)
+{
+    YapiErrorMsg error;
+    yapiInitError(&error);
+
+    YapiStmt* stmt;
+    if (yapiAllocMem("Statment", 1, sizeof(YapiStmt), (void**)&stmt, &error) != YAPI_SUCCESS) {
+        return YAPI_ERROR;
+    }
+    
+    stmt->stmtHandler = *handle;
+    *hStmt = stmt;
+    return YAPI_SUCCESS;
+}
+
+
+
+
 YapiResult yapiStmtPrepare(YapiStmt* hStmt, const char* sql, int32_t sqlLength) 
 {
     YapiErrorMsg error;
@@ -55,6 +73,25 @@ YapiResult yapiReleaseStmt(YapiStmt* hStmt)
     yapiInitError(&error);
 
     yapiCliFreeHandle(YAPI_HANDLE_STMT, hStmt->stmtHandler, &error);
+    free(hStmt);
+    return YAPI_SUCCESS;
+}
+
+
+YapiResult yapiReleaseHandle(YacHandle* handle)
+{
+    YapiErrorMsg error;
+    yapiInitError(&error);
+
+    yapiCliFreeHandle(YAPI_HANDLE_STMT, handle, &error);
+    return YAPI_SUCCESS;
+}
+
+
+YapiResult yapiReleaseCursorStmt(YapiStmt* hStmt)
+{
+    YapiErrorMsg error;
+    yapiInitError(&error);
     free(hStmt);
     return YAPI_SUCCESS;
 }

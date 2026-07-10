@@ -72,6 +72,12 @@ static YapiResult yapiGetWindowsError(DWORD errNum, YapiErrorMsg* error, char* e
 
 YapiResult yapiOpenDynamicLib(char* yacliLibName, YapiPointer* handler, YapiErrorMsg* error)
 {
+    *handler = LoadLibraryA(yacliLibName);
+    if (*handler != NULL) {
+        yapiLibHandle = *handler;
+        return YAPI_SUCCESS;
+    }
+
     char* userProfile = getenv("USERPROFILE");
     if (userProfile != NULL) {
         char basePath[FILENAME_MAX];
@@ -89,11 +95,6 @@ YapiResult yapiOpenDynamicLib(char* yacliLibName, YapiPointer* handler, YapiErro
             yapiLibHandle = *handler;
             return YAPI_SUCCESS;
         }
-    }
-    *handler = LoadLibraryA(yacliLibName);
-    if (*handler != NULL) {
-        yapiLibHandle = *handler;
-        return YAPI_SUCCESS;
     }
 
     DWORD errNum = GetLastError();
@@ -128,6 +129,12 @@ static int yapiLoadSymbol(const char* symbolName, void** symbol, YapiErrorMsg* e
 
 YapiResult yapiOpenDynamicLib(char* libName, YapiPointer* handler, YapiErrorMsg* error)
 {
+    *handler = dlopen(libName, RTLD_LAZY);
+    if (*handler) {
+        yapiLibHandle = *handler;
+        return YAPI_SUCCESS;
+    }
+
     char* homeDir = getenv("HOME");
     if (homeDir != NULL) {
         char basePath[FILENAME_MAX];
@@ -146,14 +153,10 @@ YapiResult yapiOpenDynamicLib(char* libName, YapiPointer* handler, YapiErrorMsg*
             return YAPI_SUCCESS;
         }
     }
-    *handler = dlopen(libName, RTLD_LAZY);
-    if (!*handler) {
-        char* errMsg = dlerror();
-        yapiSetError(error, YAPI_ERR_LOAD_SYMBOL, "load yacli library error [%s]", errMsg);
-        return YAPI_ERROR;
-    }
-    yapiLibHandle = *handler;
-    return YAPI_SUCCESS;
+
+    char* errMsg = dlerror();
+    yapiSetError(error, YAPI_ERR_LOAD_SYMBOL, "load yacli library error [%s]", errMsg);
+    return YAPI_ERROR;
 }
 
 YapiResult yapiCloseDynamicLib(YapiPointer* handler, YapiErrorMsg* error)
@@ -907,6 +910,15 @@ YapiResult yapiCiPdbgGetBreakpointAttrs(YacHandle hStmt, uint32_t id, YapiDebugB
     YAPI_CHECK_CLI_RETURN();
 }
 
+YapiResult yapiCiPdbgGetOutput(YacHandle hStmt, char* buffer, uint32_t* len, bool* hasMore, YapiErrorMsg* error)
+{
+    YapiResult ret;
+
+    YAPI_LOAD_SYMBOL("yacPdbgGetOutput", yapiSymbols.fnPdbgGetOutput)
+    ret = (YapiResult)(*yapiSymbols.fnPdbgGetOutput)(hStmt, buffer, len, hasMore);
+    YAPI_CHECK_CLI_RETURN();
+}
+
 YapiResult yapiCliConnectionPoolCreate(YacHandle hConnPool, const char* url, int16_t urlLength,
                                        uint32_t min, uint32_t max, uint32_t increment, const char* user, int16_t userLength,
                                        const char* password, int16_t passwordLength, uint32_t mode, YapiErrorMsg* error)
@@ -952,7 +964,7 @@ YapiResult yapiCliDescAlloc2(YacHandle hEnv, void** desc, YapiDescType type, Yap
     YAPI_CHECK_CLI_RETURN();
 }
 
-YapiResult yapiCliDescFree2(YacHandle hEnv, void** desc, YapiDescType type, YapiErrorMsg* error)
+YapiResult yapiCliDescFree2(YacHandle hEnv, void* desc, YapiDescType type, YapiErrorMsg* error)
 {
     YapiResult ret;
 
